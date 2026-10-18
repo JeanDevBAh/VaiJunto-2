@@ -1,0 +1,27 @@
+# --- MAVEN ---
+# Ignora a pasta de compilação e artefatos gerados (tanto no server quanto no client)
+**/target/
+**/pom.xml.tag
+**/pom.xml.releaseBackup
+**/pom.xml.versionsBackup
+**/pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.properties
+
+# --- JAVA / IDEs (VS Code) ---
+*.class
+*.log
+.vscode/
+.settings/
+.classpath
+.project
+bin/
+
+# --- DOCKER / SISTEMA OPERACIONAL ---
+.DS_Store
+Thumbs.db
+*.iml
+*.idea/
