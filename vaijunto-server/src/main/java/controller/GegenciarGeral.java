@@ -3,6 +3,7 @@ package controller;
 import java.util.List;
 import java.util.Map;
 
+import config.Config;
 import model.Carona;
 import model.Cidades;
 import model.Grafo;
@@ -40,14 +41,18 @@ public class GegenciarGeral {
         this(new Wal(caminhoWal));
     }
 
+    public GegenciarGeral(String caminhoWal, Config config) {
+        this(new Wal(caminhoWal), config.empresaId);
+    }
+
     /**
      * Com log. Primeiro REPRODUZ todos os eventos já gravados (sem regravá-los)
      * e só depois o servidor fica pronto para novas operações.
      */
-    public GegenciarGeral(Wal wal){
+    public GegenciarGeral(Wal wal, String empresaId){
         this.grafo = new Grafo();
         this.userService = new UserService(wal);
-        this.caronaService = new CaronaService(this.grafo, wal);
+        this.caronaService = new CaronaService(this.grafo, wal, empresaId);
         this.reservaService = new ReservaService(this.grafo, wal);
 
         if (wal != null) {
@@ -58,6 +63,7 @@ public class GegenciarGeral {
             System.out.println("[RECUPERACAO] " + eventos.size() + " eventos reproduzidos do log.");
         }
     }
+
 
     /** Replay: despacha cada evento para o serviço dono dele (sem gravar no log). */
     private void aplicarEvento(Evento e) {

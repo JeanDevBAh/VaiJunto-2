@@ -4,7 +4,7 @@ import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Paths;
-
+import config.Config;
 import controller.GegenciarGeral;
 /**
  * Classe responsável por iniciar o servidor TCP do VaiJunto.
@@ -24,15 +24,11 @@ public class ServidorTCP {
     
 
     public static void main(String[] args) {
-        System.out.println("[SERVER] Iniciando o Servidor VaiJunto...");
+    Config config = Config.doAmbiente();            // falha aqui se EMPRESA_ID faltar
+    System.out.println("[SERVER] " + config);
 
-        // Pasta do log: em Docker, monte um volume aqui (ex.: -v vaijunto-data:/data -e DATA_DIR=/data)
-        String pastaDados = System.getenv().getOrDefault("DATA_DIR", "data");
-        String arquivoWal = Paths.get(pastaDados, "wal.log").toString();
-        System.out.println("[SERVER] Arquivo de log (WAL): " + arquivoWal);
-
-        // Recupera o estado a partir do log ANTES de aceitar conexões
-        GegenciarGeral gerenciador = new GegenciarGeral(arquivoWal);
+    String arquivoWal = Paths.get(config.dataDir, "wal.log").toString();
+    GegenciarGeral gerenciador = new GegenciarGeral(arquivoWal, config); 
 
         // Abre o ServerSocket na porta definida
         try (ServerSocket serverSocket = new ServerSocket(PORTA)) {

@@ -31,18 +31,18 @@ import wal.Wal;
 public class CaronaService {
     private final Map<String, Carona>  caronas;
     private final Grafo grafo;
-
-    // Null = sem log
+    private final String empresaId;
     private final Wal wal;
 
     public CaronaService(Grafo mapa){
-        this(mapa, null);
+        this(mapa, null, "LOCAL");
     }
 
-    public CaronaService(Grafo mapa, Wal wal){
+    public CaronaService(Grafo mapa, Wal wal, String empresaId){
         this.caronas = new ConcurrentHashMap<>();
         this.grafo = mapa;
         this.wal = wal;
+        this.empresaId = empresaId;
     }
 
     // ---------- replay (NÃO grava no log) ----------

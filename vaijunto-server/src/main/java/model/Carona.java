@@ -16,6 +16,7 @@ public class Carona {
     private int vagasTotais;
     private boolean ativaOuNao;
     private List<Double> precoPorTrecho;
+    private String empresaId;
   
 
     /** 
@@ -23,8 +24,8 @@ public class Carona {
      * os clientes
     */
     public Carona(List<Cidades> rota, String data, String hora, 
-                  int vagasTotais, boolean ativaOuNao, List<Double> precos, String motorista) {
-        this(UUID.randomUUID().toString(), rota, data, hora, vagasTotais, ativaOuNao, precos, motorista);
+                  int vagasTotais, boolean ativaOuNao, List<Double> precos, String motorista, String empresaId) {
+        this(UUID.randomUUID().toString(), rota, data, hora, vagasTotais, ativaOuNao, precos, motorista, empresaId);
     }
 
     /**
