@@ -15,6 +15,7 @@ import java.util.Objects;
  */
 public class Trecho {
     private String caronaId;
+    private final String empresaId;   // empresa DONA do trecho (só ela decide as vagas)
     private String data;
     private Cidades cidadeOrigem;
     private Cidades cidadeDestino;
@@ -24,9 +25,10 @@ public class Trecho {
     private double preco;
     private List<Usuario> passageiros;
 
-    public Trecho(String caronaId, String data, Cidades cidadeOrigem, Cidades cidadeDestino,
+    public Trecho(String caronaId, String empresaId, String data, Cidades cidadeOrigem, Cidades cidadeDestino,
          int totalLugares, double preco, String motorista) {
         this.caronaId = caronaId;
+        this.empresaId = empresaId;
         this.data = data;
         this.cidadeOrigem = cidadeOrigem;
         this.cidadeDestino = cidadeDestino;
@@ -56,6 +58,19 @@ public class Trecho {
 
     public String getCaronaId() {
         return caronaId;
+    }
+
+    public String getEmpresaId() {
+        return empresaId;
+    }
+
+    /**
+     * Identificador global do trecho, igual em todos os servidores do consórcio.
+     * Exemplo: "EMPRESA_B:3f2a9c...:VALENTINE>RHODES"
+     * Serve para o servidor de um passageiro saber a QUEM pedir a vaga.
+     */
+    public String getTrechoId() {
+        return empresaId + ":" + caronaId + ":" + cidadeOrigem.name() + ">" + cidadeDestino.name();
     }
 
     public void setCaronaId(String caronaId) {

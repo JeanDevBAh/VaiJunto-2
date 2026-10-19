@@ -33,6 +33,7 @@ public class Evento {
 
     // --- carona / reserva ---
     public String id;           // id da carona ou da reserva
+    public String empresaId;    // empresa dona da carona (CARONA_CRIADA)
     public String motorista;
     public List<String> rota;   // nomes das constantes de Cidades
     public String data;
@@ -85,6 +86,7 @@ public class Evento {
         Evento e = new Evento();
         e.tipo = TipoEvento.CARONA_CRIADA;
         e.id = c.getId();
+        e.empresaId = c.getEmpresaId();
         e.motorista = c.getNomeMotorista();
         e.rota = new ArrayList<>();
         for (Cidades cidade : c.getRota()) {

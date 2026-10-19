@@ -78,4 +78,41 @@ public class Grafo {
             }
         }
     }
+
+    public List<Trecho> buscarTrechos(String dataDesejada) {
+    List<Trecho> resultado = new ArrayList<>();
+
+    // Validação básica da data
+    if (dataDesejada == null || dataDesejada.trim().isEmpty()) {
+        return resultado;
+    }
+
+    // Itera por todas as chaves (cidades de origem) no mapa de arestas
+    for (Cidades origem : arestas.keySet()) {
+        // Verifica se a cidade de origem é válida e está disponível
+        if (origem == null || !origem.isDisponivel()) {
+            continue;
+        }
+
+        // Percorre todos os trechos saindo desta cidade
+        for (Trecho trecho : arestas.get(origem)) {
+            if (trecho == null) {
+                continue;
+            }
+
+            Cidades destino = trecho.getCidadeDestino();
+
+            boolean mesmaData = trecho.getData() != null && trecho.getData().equals(dataDesejada);
+            boolean temVagas = trecho.getLugaresDisponiveis() > 0;
+            boolean destinoAtivo = destino != null && destino.isDisponivel();
+
+            // Se o trecho atende aos critérios, adiciona diretamente à lista de resultados
+            if (mesmaData && temVagas && destinoAtivo) {
+                resultado.add(trecho);
+            }
+        }
+    }
+
+    return resultado;
+}
 }

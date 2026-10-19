@@ -10,6 +10,7 @@ import model.Grafo;
 import model.Itinerario;
 import model.Reserva;
 import model.TipoUser;
+import model.Trecho;
 import model.Usuario;
 import wal.Evento;
 import wal.Wal;
@@ -33,14 +34,10 @@ public class GegenciarGeral {
     
     /** Sem log: tudo em memória (usado pelos testes de concorrência). */
     public GegenciarGeral(){
-        this((Wal) null);
+        this((Wal) null, "LOCAL");
     }
 
-    /** Abre (ou cria) o log no caminho informado e recupera o estado a partir dele. */
-    public GegenciarGeral(String caminhoWal){
-        this(new Wal(caminhoWal));
-    }
-
+    /** Usado pelo servidor: abre o log no caminho informado e usa a identidade da Config. */
     public GegenciarGeral(String caminhoWal, Config config) {
         this(new Wal(caminhoWal), config.empresaId);
     }
@@ -168,6 +165,12 @@ public class GegenciarGeral {
         return reservaService.listarReservasPorPassageiro(passageiro.getLogin());
     }
 
+    //=================================================
+    //API
+    //=================================================    
+    public List<Trecho> getTrechosData(String data){
+        return caronaService.listarTrechosPorData(data);
+    }
    
 
 }

@@ -52,7 +52,9 @@ public class CaronaService {
         for (String nome : e.rota) {
             rota.add(Cidades.valueOf(nome));
         }
-        Carona carona = new Carona(e.id, rota, e.data, e.hora, e.vagas, e.ativa, e.precos, e.motorista);
+        // Logs antigos (antes do Passo 1) não têm empresaId: usa a empresa deste servidor.
+        String empresa = (e.empresaId != null) ? e.empresaId : this.empresaId;
+        Carona carona = new Carona(e.id, rota, e.data, e.hora, e.vagas, e.ativa, e.precos, e.motorista, empresa);
         caronas.put(carona.getId(), carona);
         if (carona.isAtivaOuNao()) {
             grafo.addTrechos(carona.getTrechos());
@@ -92,7 +94,7 @@ public class CaronaService {
                         "Você já publicou uma carona com a mesma rota, data e horário.");
             }
         }
-        Carona carona = new Carona(rota, data, hora, vagasTotais, ativaOuNao, precos, motorista);
+        Carona carona = new Carona(rota, data, hora, vagasTotais, ativaOuNao, precos, motorista, this.empresaId);
         if (wal != null) {
             wal.adicionar(Evento.caronaCriada(carona)); // registrar ANTES de aplicar
         }
@@ -158,6 +160,12 @@ public class CaronaService {
             return true;
         }
         return false;
+    }
+
+
+    public List<Trecho> listarTrechosPorData(String data){
+        List<Trecho> trechosDisponiveis = grafo.buscarTrechos(data);
+        return trechosDisponiveis;
     }
 
 

@@ -9,7 +9,7 @@ import controller.GegenciarGeral;
 /**
  * Classe responsável por iniciar o servidor TCP do VaiJunto.
  *
- * Abre um ServerSocket na porta 8080 e aguarda continuamente novas conexões
+ * Abre um ServerSocket na porta TCP definida em Config e aguarda continuamente novas conexões
  * de clientes. Para cada cliente conectado, cria um ClientHandler executado
  * em uma nova thread, permitindo que vários motoristas e passageiros sejam
  * atendidos simultaneamente.
@@ -19,20 +19,17 @@ import controller.GegenciarGeral;
  */
 public class ServidorTCP {
     
-    // Porta onde o servidor vai escutar as conexões 
-    private static final int PORTA = 8080;
-    
-
     public static void main(String[] args) {
-    Config config = Config.doAmbiente();            // falha aqui se EMPRESA_ID faltar
-    System.out.println("[SERVER] " + config);
+        Config config = Config.doAmbiente();   // falha aqui se EMPRESA_ID faltar
+        System.out.println("[SERVER] " + config);
 
-    String arquivoWal = Paths.get(config.dataDir, "wal.log").toString();
-    GegenciarGeral gerenciador = new GegenciarGeral(arquivoWal, config); 
+        String arquivoWal = Paths.get(config.dataDir, "wal.log").toString();
+        GegenciarGeral gerenciador = new GegenciarGeral(arquivoWal, config);
 
-        // Abre o ServerSocket na porta definida
-        try (ServerSocket serverSocket = new ServerSocket(PORTA)) {
-            System.out.println("[SERVER] Servidor rodando com sucesso e escutando na porta " + PORTA + ".");
+        // Abre o ServerSocket na porta TCP desta empresa (vem da Config)
+        try (ServerSocket serverSocket = new ServerSocket(config.portaTcp)) {
+            System.out.println("[SERVER] Empresa " + config.empresaId
+                    + " escutando clientes na porta TCP " + config.portaTcp + ".");
 
             // Laço infinito para manter o servidor sempre aberto aceitando novos clientes
             while (true) {

@@ -33,8 +33,11 @@ public class Carona {
      * com o id original (os trechos herdam esse id).
      */
     public Carona(String id, List<Cidades> rota, String data, String hora, 
-                  int vagasTotais, boolean ativaOuNao, List<Double> precos, String motorista) {
+                  int vagasTotais, boolean ativaOuNao, List<Double> precos, String motorista, String empresaId) {
         
+        if (empresaId == null || empresaId.isBlank()) {
+            throw new IllegalArgumentException("A empresa dona da carona é obrigatória");
+        }
         if (rota == null || rota.size() < 2) {
             throw new IllegalArgumentException("A rota tem que ter pelo menos 2 cidades");
         }
@@ -62,6 +65,7 @@ public class Carona {
         
 
         this.id = id;
+        this.empresaId = empresaId;
         this.rota = new ArrayList<>(rota);
         this.precoPorTrecho = new ArrayList<>(precos); // Inicializa ANTES de gerar os trechos
         this.data = data;
@@ -80,13 +84,16 @@ public class Carona {
             Cidades destino = rotaCidades.get(i + 1);//pega o destino
             double precoDoTrecho = precos.get(i);//associa o preço
             
-            lista.add(new Trecho(this.id, data, origem, destino, vagas, precoDoTrecho, this.motorista));
+            lista.add(new Trecho(this.id, this.empresaId, data, origem, destino, vagas, precoDoTrecho, this.motorista));
         }
         return lista;
     }
 
     public String getId() {
         return id;
+    }
+    public String getEmpresaId() {
+        return empresaId;
     }
     public void setId(String id) {
         this.id = id;
