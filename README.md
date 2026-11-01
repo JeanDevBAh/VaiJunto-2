@@ -313,15 +313,4 @@ Cada container expõe:
 
 A emulação da falha pode ser feita pela parada de um service do Docker (`docker compose stop empresa-b`, por exemplo). A apresentação pode então observar que os outros servidores continuam respondendo e que a empresa fora do ar é marcada como offline pelo monitor, com a operação do consórcio sendo retomada conforme o restante da infraestrutura continua ativa.
 
-## Checklist para apresentação
 
-Durante a apresentação, o grupo deve demonstrar:
-
-- o sistema funcionando com três empresas em operação;
-- a busca de itinerários entre empresas;
-- a reserva simultânea de assentos e o tratamento de conflitos;
-- a execução do protocolo de prepare/commit/abort;
-- a recuperação após falha de uma empresa;
-- a observação do monitor de peers e do comportamento do consórcio durante a indisponibilidade de um servidor.
-
-Esses pontos são os que mais diretamente atendem ao barema do problema 2 e permitem validar tanto a funcionalidade quanto a robustez do projeto distribuído.
