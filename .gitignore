@@ -25,3 +25,5 @@ bin/
 Thumbs.db
 *.iml
 *.idea/
+# --- LOCAL DATA ---
+data/

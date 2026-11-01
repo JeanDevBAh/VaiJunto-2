@@ -25,18 +25,29 @@ import com.google.gson.JsonObject;
  */
 public class ClienteConsorcio {
     public static final Duration TIMEOUT_PADRAO = Duration.ofSeconds(2);
+    public static final String HEADER_TOKEN = "X-Consorcio-Token";
 
     private final HttpClient http;
     private final Duration timeout;
     private final Gson gson = new Gson();
+    private final String token;
 
     public ClienteConsorcio() {
-        this(TIMEOUT_PADRAO);
+        this(System.getenv().getOrDefault("CONSORCIO_TOKEN", "vaijunto-local-token"), TIMEOUT_PADRAO);
+    }
+
+    public ClienteConsorcio(String token) {
+        this(token, TIMEOUT_PADRAO);
     }
 
     public ClienteConsorcio(Duration timeout) {
+        this(System.getenv().getOrDefault("CONSORCIO_TOKEN", "vaijunto-local-token"), timeout);
+    }
+
+    public ClienteConsorcio(String token, Duration timeout) {
         this.timeout = timeout;
         this.http = HttpClient.newBuilder().connectTimeout(timeout).build();
+        this.token = token == null || token.isBlank() ? "vaijunto-local-token" : token;
     }
 
     /** Devolve o empresaId do outro servidor, ou lança PeerIndisponivelException. */
@@ -97,11 +108,56 @@ public class ClienteConsorcio {
         return "INEXISTENTE";
     }
 
+    public boolean prepararTx(String urlBase, String txId, String login, List<TrechoRef> trechos, long ttlMs) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("login", login);
+        payload.put("ttlMs", ttlMs);
+        payload.put("trechos", trechos);
+        String url = urlBase + ServidorApi.PREFIXO + "/tx/" + URLEncoder.encode(txId, StandardCharsets.UTF_8) + "/prepare";
+        try {
+            JsonObject json = gson.fromJson(post(url, gson.toJson(payload)), JsonObject.class);
+            return json.has("sucesso") && json.get("sucesso").getAsBoolean();
+        } catch (PeerIndisponivelException e) {
+            return false;
+        }
+    }
+
+    public boolean confirmarTx(String urlBase, String txId) {
+        String url = urlBase + ServidorApi.PREFIXO + "/tx/" + URLEncoder.encode(txId, StandardCharsets.UTF_8) + "/commit";
+        try {
+            JsonObject json = gson.fromJson(post(url, "{}"), JsonObject.class);
+            return json.has("sucesso") && json.get("sucesso").getAsBoolean();
+        } catch (PeerIndisponivelException e) {
+            return false;
+        }
+    }
+
+    public boolean abortarTx(String urlBase, String txId) {
+        String url = urlBase + ServidorApi.PREFIXO + "/tx/" + URLEncoder.encode(txId, StandardCharsets.UTF_8) + "/abort";
+        try {
+            JsonObject json = gson.fromJson(post(url, "{}"), JsonObject.class);
+            return json.has("sucesso") && json.get("sucesso").getAsBoolean();
+        } catch (PeerIndisponivelException e) {
+            return false;
+        }
+    }
+
+    public String consultarStatusTx(String urlBase, String txId) {
+        String url = urlBase + ServidorApi.PREFIXO + "/tx/" + URLEncoder.encode(txId, StandardCharsets.UTF_8) + "/estado";
+        try {
+            JsonObject json = gson.fromJson(get(url), JsonObject.class);
+            return json.has("estado") ? json.get("estado").getAsString() : "DESCONHECIDA";
+        } catch (PeerIndisponivelException e) {
+            return "DESCONHECIDA";
+        }
+    }
+
     private String post(String url, String corpo) {
         HttpRequest requisicao = HttpRequest.newBuilder(URI.create(url))
                 .timeout(timeout)
                 .header("Accept", "application/json")
                 .header("Content-Type", "application/json; charset=utf-8")
+                .header(HEADER_TOKEN, token)
                 .POST(HttpRequest.BodyPublishers.ofString(corpo, StandardCharsets.UTF_8))
                 .build();
         try {
@@ -122,6 +178,7 @@ public class ClienteConsorcio {
         HttpRequest requisicao = HttpRequest.newBuilder(URI.create(url))
                 .timeout(timeout)
                 .header("Accept", "application/json")
+                .header(HEADER_TOKEN, token)
                 .GET()
                 .build();
         try {

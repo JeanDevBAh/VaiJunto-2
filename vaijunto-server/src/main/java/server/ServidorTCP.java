@@ -35,12 +35,13 @@ public class ServidorTCP {
         final MonitorPeers[] monitorHolder = new MonitorPeers[1];
 
         try {
-            apiHolder[0] = new ServidorApi(config.portaHttp, config.empresaId, gerenciador);
+            apiHolder[0] = new ServidorApi(config.portaHttp, config.empresaId, config.consorcioToken, gerenciador);
             apiHolder[0].iniciar();
             System.out.println("[SERVER] API REST ativa na porta HTTP " + config.portaHttp + ".");
 
-            monitorHolder[0] = new MonitorPeers(config.peers, new ClienteConsorcio(), 3_000L);
+            monitorHolder[0] = new MonitorPeers(config.peers, new ClienteConsorcio(config.consorcioToken), 3_000L);
             monitorHolder[0].iniciar();
+            gerenciador.setMonitorPeers(monitorHolder[0]);
             System.out.println("[SERVER] Monitor de peers iniciado para " + config.peers.size() + " empresa(s). ");
         } catch (IOException e) {
             System.out.println("[SERVER] Falha ao iniciar serviços distribuídos: " + e.getMessage());

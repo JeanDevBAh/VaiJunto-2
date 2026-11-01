@@ -11,15 +11,15 @@ PORTA_HTTP_B=7071
 PORTA_TCP_C=8082
 PORTA_HTTP_C=7072
 
-export EMPRESA_ID=EMPRESA_A PORTA_TCP=$PORTA_TCP_A PORTA_HTTP=$PORTA_HTTP_A DATA_DIR=./data/empresa_a PEERS="EMPRESA_B=http://localhost:7071,EMPRESA_C=http://localhost:7072"
+export EMPRESA_ID=EMPRESA_A PORTA_TCP=$PORTA_TCP_A PORTA_HTTP=$PORTA_HTTP_A DATA_DIR=./data/empresa_a CONSORCIO_TOKEN=vaijunto-local-token PEERS="EMPRESA_B=http://localhost:7071,EMPRESA_C=http://localhost:7072"
 java -jar target/vaijunto-server-1.0-SNAPSHOT-jar-with-dependencies.jar > /tmp/vaijunto_empresa_a.log 2>&1 &
 PID_A=$!
 
-export EMPRESA_ID=EMPRESA_B PORTA_TCP=$PORTA_TCP_B PORTA_HTTP=$PORTA_HTTP_B DATA_DIR=./data/empresa_b PEERS="EMPRESA_A=http://localhost:7070,EMPRESA_C=http://localhost:7072"
+export EMPRESA_ID=EMPRESA_B PORTA_TCP=$PORTA_TCP_B PORTA_HTTP=$PORTA_HTTP_B DATA_DIR=./data/empresa_b CONSORCIO_TOKEN=vaijunto-local-token PEERS="EMPRESA_A=http://localhost:7070,EMPRESA_C=http://localhost:7072"
 java -jar target/vaijunto-server-1.0-SNAPSHOT-jar-with-dependencies.jar > /tmp/vaijunto_empresa_b.log 2>&1 &
 PID_B=$!
 
-export EMPRESA_ID=EMPRESA_C PORTA_TCP=$PORTA_TCP_C PORTA_HTTP=$PORTA_HTTP_C DATA_DIR=./data/empresa_c PEERS="EMPRESA_A=http://localhost:7070,EMPRESA_B=http://localhost:7071"
+export EMPRESA_ID=EMPRESA_C PORTA_TCP=$PORTA_TCP_C PORTA_HTTP=$PORTA_HTTP_C DATA_DIR=./data/empresa_c CONSORCIO_TOKEN=vaijunto-local-token PEERS="EMPRESA_A=http://localhost:7070,EMPRESA_B=http://localhost:7071"
 java -jar target/vaijunto-server-1.0-SNAPSHOT-jar-with-dependencies.jar > /tmp/vaijunto_empresa_c.log 2>&1 &
 PID_C=$!
 

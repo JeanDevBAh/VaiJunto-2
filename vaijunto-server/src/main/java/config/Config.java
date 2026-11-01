@@ -8,15 +8,19 @@ public final class Config {
     public final int portaTcp;
     public final int portaHttp;
     public final String dataDir;
+    public final String consorcioToken;
     public final Map<String, String> peers;
 
-    private Config(String empresaId, int portaTcp, int portaHttp, String dataDir, 
-                    Map<String, String> peers) {
+    private Config(String empresaId, int portaTcp, int portaHttp, String dataDir,
+                    String consorcioToken, Map<String, String> peers) {
         this.empresaId = empresaId;
         this.portaTcp = portaTcp;
         this.portaHttp = portaHttp;
         this.dataDir = dataDir;
-        this.peers = peers;             
+        this.consorcioToken = consorcioToken == null || consorcioToken.isBlank()
+                ? "vaijunto-local-token"
+                : consorcioToken;
+        this.peers = peers;
     }
 
     public static Config doAmbiente() {
@@ -34,6 +38,7 @@ public final class Config {
             Integer.parseInt(env.getOrDefault("PORTA_TCP", "8080")),
             Integer.parseInt(env.getOrDefault("PORTA_HTTP", "7070")),
             env.getOrDefault("DATA_DIR", "data"),
+            env.getOrDefault("CONSORCIO_TOKEN", "vaijunto-local-token"),
             lerPeers(env.get("PEERS"), id));
     }
 
@@ -55,7 +60,7 @@ public final class Config {
     @Override
     public String toString() {
         return "Config{empresa=" + empresaId + ", tcp=" + portaTcp + ", http=" + portaHttp
-            + ", dados=" + dataDir + ", peers=" + peers + "}";
+            + ", dados=" + dataDir + ", token=" + consorcioToken + ", peers=" + peers + "}";
     }
 }
 

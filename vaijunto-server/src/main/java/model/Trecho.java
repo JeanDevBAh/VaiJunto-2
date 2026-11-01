@@ -68,6 +68,11 @@ public class Trecho {
      * Identificador global do trecho, igual em todos os servidores do consórcio.
      * Exemplo: "EMPRESA_B:3f2a9c...:VALENTINE>RHODES"
      * Serve para o servidor de um passageiro saber a QUEM pedir a vaga.
+     *
+     * O critério de precedência do último assento é definido pelo dono do trecho:
+     * a competição é serializada pelo lock do próprio trecho no servidor dona, sem
+     * depender de relógios sincronizados. Quem chega primeiro ao lock ganha; quem
+     * perder recebe 409 e aborta a transação.
      */
     public String getTrechoId() {
         return empresaId + ":" + caronaId + ":" + cidadeOrigem.name() + ">" + cidadeDestino.name();

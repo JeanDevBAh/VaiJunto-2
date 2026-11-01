@@ -19,57 +19,43 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
 import controller.GegenciarGeral;
+import model.Cidades;
 import model.Trecho;
 
 /**
  * API REST que um servidor oferece aos DEMAIS servidores do consórcio.
- * (Os clientes motorista/passageiro continuam usando o TCP de sempre.)
- *
- * Endpoints (prefixo /api/v1):
- *   GET /saude                 -> 200 {"empresaId":"...","status":"OK"}
- *   GET /trechos?data=VALOR    -> 200 {"empresaId":"...","data":"...","trechos":[...]}
- *                                 400 se faltar o parâmetro data
- *
- * Códigos gerais: 404 caminho desconhecido, 405 método diferente de GET.
- *
- * Usa o servidor HTTP que já vem no JDK (sem biblioteca extra), com uma
- * thread virtual por requisição.
  */
 public class ServidorApi {
     public static final String PREFIXO = "/api/v1";
 
     private final String empresaId;
+    private final String consorcioToken;
     private final GegenciarGeral gerenciador;
     private final HttpServer servidor;
     private final Gson gson = new Gson();
 
-    /** @param porta 0 escolhe uma porta livre (útil em testes; veja getPorta()) */
     public ServidorApi(int porta, String empresaId, GegenciarGeral gerenciador) throws IOException {
+        this(porta, empresaId, System.getenv().getOrDefault("CONSORCIO_TOKEN", "vaijunto-local-token"), gerenciador);
+    }
+
+    public ServidorApi(int porta, String empresaId, String consorcioToken, GegenciarGeral gerenciador) throws IOException {
         this.empresaId = empresaId;
+        this.consorcioToken = consorcioToken == null || consorcioToken.isBlank() ? "vaijunto-local-token" : consorcioToken;
         this.gerenciador = gerenciador;
-        this.servidor = HttpServer.create(new InetSocketAddress(porta), 0); // escuta em todas as interfaces
+        this.servidor = HttpServer.create(new InetSocketAddress(porta), 0);
         this.servidor.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
         this.servidor.createContext(PREFIXO + "/saude", this::tratarSaude);
         this.servidor.createContext(PREFIXO + "/trechos", this::tratarTrechos);
         this.servidor.createContext(PREFIXO + "/reservas", this::tratarReservas);
         this.servidor.createContext(PREFIXO + "/reservas/cancelar", this::tratarCancelarReserva);
         this.servidor.createContext(PREFIXO + "/reservas/estado", this::tratarEstadoReserva);
+        this.servidor.createContext(PREFIXO + "/tx", this::tratarTx);
         this.servidor.createContext("/", ex -> responder(ex, 404, erro("Caminho desconhecido")));
     }
 
-    public void iniciar() {
-        servidor.start();
-    }
-
-    public void parar() {
-        servidor.stop(0);
-    }
-
-    public int getPorta() {
-        return servidor.getAddress().getPort();
-    }
-
-    // ------------------------------------------------------------------
+    public void iniciar() { servidor.start(); }
+    public void parar() { servidor.stop(0); }
+    public int getPorta() { return servidor.getAddress().getPort(); }
 
     private void tratarSaude(HttpExchange ex) throws IOException {
         if (!"GET".equals(ex.getRequestMethod())) {
@@ -121,10 +107,7 @@ public class ServidorApi {
                 refs.add(gson.fromJson(trechos.get(i), TrechoRef.class));
             }
             String idReserva = gerenciador.reservarTrechosRemotos(login, refs);
-            responder(ex, 200, Map.of(
-                    "sucesso", true,
-                    "idReserva", idReserva,
-                    "mensagem", "Reserva confirmada no peer."));
+            responder(ex, 200, Map.of("sucesso", true, "idReserva", idReserva, "mensagem", "Reserva confirmada no peer."));
         } catch (JsonParseException | IllegalArgumentException e) {
             responder(ex, 400, erro("Payload inválido: " + e.getMessage()));
         } catch (RuntimeException e) {
@@ -146,9 +129,7 @@ public class ServidorApi {
                 return;
             }
             boolean sucesso = gerenciador.cancelarReservaRemota(login, idReserva);
-            responder(ex, 200, Map.of(
-                    "sucesso", sucesso,
-                    "mensagem", sucesso ? "Reserva cancelada no peer." : "Reserva inexistente ou não pertence a este usuário."));
+            responder(ex, 200, Map.of("sucesso", sucesso, "mensagem", sucesso ? "Reserva cancelada no peer." : "Reserva inexistente ou não pertence a este usuário."));
         } catch (JsonParseException | IllegalArgumentException e) {
             responder(ex, 400, erro("Payload inválido: " + e.getMessage()));
         }
@@ -169,7 +150,88 @@ public class ServidorApi {
         responder(ex, 200, Map.of("status", status, "idReserva", idReserva));
     }
 
-    // ------------------------------------------------------------------
+    private void tratarTx(HttpExchange ex) throws IOException {
+        if (!autorizado(ex)) {
+            responder(ex, 401, erro("Token inválido ou ausente."));
+            return;
+        }
+
+        String path = ex.getRequestURI().getPath();
+        String prefixo = PREFIXO + "/tx/";
+        if (!path.startsWith(prefixo)) {
+            responder(ex, 404, erro("Rota de transação inválida."));
+            return;
+        }
+
+        String restante = path.substring(prefixo.length());
+        String txId = restante.contains("/") ? restante.substring(0, restante.indexOf('/')) : restante;
+        if (txId == null || txId.isBlank()) {
+            responder(ex, 400, erro("txId obrigatório."));
+            return;
+        }
+
+        String subrota = restante.startsWith(txId + "/") ? restante.substring(txId.length() + 1) : "";
+        if ("GET".equals(ex.getRequestMethod()) && (subrota.isEmpty() || "estado".equals(subrota))) {
+            responder(ex, 200, Map.of("txId", txId, "estado", gerenciador.getStatusTxLocal(txId), "empresaId", empresaId));
+            return;
+        }
+
+        if (!"POST".equals(ex.getRequestMethod())) {
+            responder(ex, 405, erro("Use POST"));
+            return;
+        }
+
+        try {
+            JsonObject body = gson.fromJson(leitura(ex), JsonObject.class);
+            String login = body != null && body.has("login") ? body.get("login").getAsString() : null;
+            long ttlMs = body != null && body.has("ttlMs") ? body.get("ttlMs").getAsLong() : 10_000L;
+
+            if ("prepare".equals(subrota)) {
+                JsonArray trechos = body == null || !body.has("trechos") ? null : body.getAsJsonArray("trechos");
+                if (login == null || login.isBlank() || trechos == null || trechos.size() == 0) {
+                    responder(ex, 400, erro("login e trechos são obrigatórios para prepare."));
+                    return;
+                }
+                List<Trecho> trechosLocal = new ArrayList<>();
+                for (int i = 0; i < trechos.size(); i++) {
+                    JsonObject trechoJson = trechos.get(i).getAsJsonObject();
+                    Trecho trecho = gerenciador.getTrechoPorReferencia(
+                            trechoJson.get("caronaId").getAsString(),
+                            Cidades.fromString(trechoJson.get("origem").getAsString()),
+                            Cidades.fromString(trechoJson.get("destino").getAsString()));
+                    if (trecho == null) {
+                        responder(ex, 409, erro("Trecho não encontrado no participante: " + trechoJson.get("caronaId").getAsString()));
+                        return;
+                    }
+                    trechosLocal.add(trecho);
+                }
+                boolean ok = gerenciador.prepararTxLocal(txId, login, trechosLocal, ttlMs);
+                responder(ex, ok ? 200 : 409, Map.of("txId", txId, "sucesso", ok, "estado", ok ? "PREPARADA" : "ABORT", "empresaId", empresaId));
+                return;
+            }
+
+            if ("commit".equals(subrota)) {
+                boolean ok = gerenciador.confirmarTxLocal(txId);
+                responder(ex, ok ? 200 : 409, Map.of("txId", txId, "sucesso", ok, "estado", ok ? "COMMIT" : "DESCONHECIDA", "empresaId", empresaId));
+                return;
+            }
+
+            if ("abort".equals(subrota)) {
+                boolean ok = gerenciador.abortarTxLocal(txId, "ABORT_PEER");
+                responder(ex, ok ? 200 : 409, Map.of("txId", txId, "sucesso", ok, "estado", ok ? "ABORT" : "DESCONHECIDA", "empresaId", empresaId));
+                return;
+            }
+
+            responder(ex, 404, erro("Rota de transação inválida: " + subrota));
+        } catch (IllegalArgumentException | JsonParseException e) {
+            responder(ex, 400, erro("Payload inválido: " + e.getMessage()));
+        }
+    }
+
+    private boolean autorizado(HttpExchange ex) {
+        String token = ex.getRequestHeaders().getFirst(ClienteConsorcio.HEADER_TOKEN);
+        return token != null && token.equals(consorcioToken);
+    }
 
     private static String leitura(HttpExchange ex) throws IOException {
         return new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);

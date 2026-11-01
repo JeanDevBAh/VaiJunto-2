@@ -50,6 +50,15 @@ public class Evento {
     public String idLocal;
     public List<ReservaDistribuidaRef> reservasRemotas;
 
+    // --- transação distribuída / 2PC leve ---
+    public String txId;
+    public String estadoTx;
+    public List<String> participantes;
+    public List<String> trechosTx;
+    public String motivo;
+    public Long expiraEm;
+    public Long proximaTentativaEm;
+
     /** Referência a um trecho: o id da carona mais o par de cidades. */
     public static class TrechoRef {
         public String caronaId;
@@ -172,6 +181,73 @@ public class Evento {
         e.idLocal = idLocal;
         e.login = idLocal;
         e.reservasRemotas = reservasRemotas == null ? new ArrayList<>() : new ArrayList<>(reservasRemotas);
+        return e;
+    }
+
+    public static Evento txIniciada(String txId, String login, List<String> participantes, List<String> trechosTx) {
+        Evento e = new Evento();
+        e.tipo = TipoEvento.TX_INICIADA;
+        e.txId = txId;
+        e.login = login;
+        e.participantes = participantes == null ? new ArrayList<>() : new ArrayList<>(participantes);
+        e.trechosTx = trechosTx == null ? new ArrayList<>() : new ArrayList<>(trechosTx);
+        e.estadoTx = "INICIADA";
+        return e;
+    }
+
+    public static Evento txPreparada(String txId, String empresaId, List<String> trechosTx, long expiraEm) {
+        Evento e = new Evento();
+        e.tipo = TipoEvento.TX_PREPARADA;
+        e.txId = txId;
+        e.empresaId = empresaId;
+        e.trechosTx = trechosTx == null ? new ArrayList<>() : new ArrayList<>(trechosTx);
+        e.estadoTx = "PREPARADA";
+        e.expiraEm = expiraEm;
+        return e;
+    }
+
+    public static Evento txCommit(String txId) {
+        Evento e = new Evento();
+        e.tipo = TipoEvento.TX_COMMIT;
+        e.txId = txId;
+        e.estadoTx = "COMMIT";
+        return e;
+    }
+
+    public static Evento txAbort(String txId, String motivo) {
+        Evento e = new Evento();
+        e.tipo = TipoEvento.TX_ABORT;
+        e.txId = txId;
+        e.motivo = motivo;
+        e.estadoTx = "ABORT";
+        return e;
+    }
+
+    public static Evento txCommitConfirmado(String txId, String empresaId) {
+        Evento e = new Evento();
+        e.tipo = TipoEvento.TX_COMMIT_CONFIRMADO;
+        e.txId = txId;
+        e.empresaId = empresaId;
+        e.estadoTx = "COMMIT_CONFIRMADO";
+        return e;
+    }
+
+    public static Evento txAbortConfirmado(String txId, String empresaId) {
+        Evento e = new Evento();
+        e.tipo = TipoEvento.TX_ABORT_CONFIRMADO;
+        e.txId = txId;
+        e.empresaId = empresaId;
+        e.estadoTx = "ABORT_CONFIRMADO";
+        return e;
+    }
+
+    public static Evento txRetryScheduled(String txId, long proximaTentativaEm, String motivo) {
+        Evento e = new Evento();
+        e.tipo = TipoEvento.TX_RETRY_SCHEDULED;
+        e.txId = txId;
+        e.proximaTentativaEm = proximaTentativaEm;
+        e.motivo = motivo;
+        e.estadoTx = "RETRY";
         return e;
     }
 }
