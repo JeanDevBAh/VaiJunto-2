@@ -307,17 +307,4 @@ Cada contêiner expõe:
 - volume dedicado para armazenamento local da empresa;
 - uma chave compartilhada `CONSORCIO_TOKEN` e lista de peers específica para cada instância.
 
-Durante a apresentação, a falha de uma empresa pode ser simulada pela interrupção do contêiner correspondente. A observação do sistema em execução permite verificar que os outros servidores continuam respondendo e que a empresa fora do ar é sinalizada como indisponível pelo monitor, sem interromper completamente o funcionamento do consórcio.
-
-## Checklist para apresentação
-
-Durante a apresentação do projeto, o grupo deve demonstrar, de forma objetiva e completa, os seguintes aspectos:
-
-- operação do consórcio com três empresas em funcionamento;
-- busca de itinerários entre empresas distintas;
-- processamento de reservas concorrentes e tratamento de conflitos;
-- execução do protocolo de `prepare`, `commit` e `abort`;
-- recuperação de estado após falha de uma empresa;
-- observação do comportamento do monitor de peers e da continuação do funcionamento do consórcio em presença de indisponibilidade.
-
-Esses elementos estão diretamente alinhados com o barema do Problema 2 e permitem validar tanto a funcionalidade da solução quanto sua robustez em um ambiente distribuído e sujeito a falhas.
+A falha de uma empresa pode ser simulada pela interrupção do contêiner correspondente. A observação do sistema em execução permite verificar que os outros servidores continuam respondendo e que a empresa fora do ar é sinalizada como indisponível pelo monitor, sem interromper completamente o funcionamento do consórcio.
