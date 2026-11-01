@@ -12,6 +12,9 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
@@ -48,6 +51,9 @@ public class ServidorApi {
         this.servidor.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
         this.servidor.createContext(PREFIXO + "/saude", this::tratarSaude);
         this.servidor.createContext(PREFIXO + "/trechos", this::tratarTrechos);
+        this.servidor.createContext(PREFIXO + "/reservas", this::tratarReservas);
+        this.servidor.createContext(PREFIXO + "/reservas/cancelar", this::tratarCancelarReserva);
+        this.servidor.createContext(PREFIXO + "/reservas/estado", this::tratarEstadoReserva);
         this.servidor.createContext("/", ex -> responder(ex, 404, erro("Caminho desconhecido")));
     }
 
@@ -97,7 +103,77 @@ public class ServidorApi {
         responder(ex, 200, corpo);
     }
 
+    private void tratarReservas(HttpExchange ex) throws IOException {
+        if (!"POST".equals(ex.getRequestMethod())) {
+            responder(ex, 405, erro("Use POST"));
+            return;
+        }
+        try {
+            JsonObject body = gson.fromJson(leitura(ex), JsonObject.class);
+            String login = body.has("passageiroLogin") ? body.get("passageiroLogin").getAsString() : null;
+            JsonArray trechos = body.getAsJsonArray("trechos");
+            if (login == null || login.isBlank() || trechos == null || trechos.size() == 0) {
+                responder(ex, 400, erro("passageiroLogin e trechos são obrigatórios."));
+                return;
+            }
+            List<TrechoRef> refs = new ArrayList<>();
+            for (int i = 0; i < trechos.size(); i++) {
+                refs.add(gson.fromJson(trechos.get(i), TrechoRef.class));
+            }
+            String idReserva = gerenciador.reservarTrechosRemotos(login, refs);
+            responder(ex, 200, Map.of(
+                    "sucesso", true,
+                    "idReserva", idReserva,
+                    "mensagem", "Reserva confirmada no peer."));
+        } catch (JsonParseException | IllegalArgumentException e) {
+            responder(ex, 400, erro("Payload inválido: " + e.getMessage()));
+        } catch (RuntimeException e) {
+            responder(ex, 409, erro(e.getMessage()));
+        }
+    }
+
+    private void tratarCancelarReserva(HttpExchange ex) throws IOException {
+        if (!"POST".equals(ex.getRequestMethod())) {
+            responder(ex, 405, erro("Use POST"));
+            return;
+        }
+        try {
+            JsonObject body = gson.fromJson(leitura(ex), JsonObject.class);
+            String login = body.has("passageiroLogin") ? body.get("passageiroLogin").getAsString() : null;
+            String idReserva = body.has("idReserva") ? body.get("idReserva").getAsString() : null;
+            if (login == null || login.isBlank() || idReserva == null || idReserva.isBlank()) {
+                responder(ex, 400, erro("passageiroLogin e idReserva são obrigatórios."));
+                return;
+            }
+            boolean sucesso = gerenciador.cancelarReservaRemota(login, idReserva);
+            responder(ex, 200, Map.of(
+                    "sucesso", sucesso,
+                    "mensagem", sucesso ? "Reserva cancelada no peer." : "Reserva inexistente ou não pertence a este usuário."));
+        } catch (JsonParseException | IllegalArgumentException e) {
+            responder(ex, 400, erro("Payload inválido: " + e.getMessage()));
+        }
+    }
+
+    private void tratarEstadoReserva(HttpExchange ex) throws IOException {
+        if (!"GET".equals(ex.getRequestMethod())) {
+            responder(ex, 405, erro("Use GET"));
+            return;
+        }
+        String idReserva = parametro(ex.getRequestURI().getRawQuery(), "idReserva");
+        String login = parametro(ex.getRequestURI().getRawQuery(), "login");
+        if (idReserva == null || idReserva.isBlank()) {
+            responder(ex, 400, erro("Parâmetro obrigatório: idReserva"));
+            return;
+        }
+        String status = gerenciador.getStatusReservaRemota(login, idReserva);
+        responder(ex, 200, Map.of("status", status, "idReserva", idReserva));
+    }
+
     // ------------------------------------------------------------------
+
+    private static String leitura(HttpExchange ex) throws IOException {
+        return new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+    }
 
     private static Map<String, Object> erro(String mensagem) {
         Map<String, Object> m = new LinkedHashMap<>();

@@ -9,7 +9,9 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
@@ -51,6 +53,69 @@ public class ClienteConsorcio {
         List<TrechoRef> lista = new ArrayList<>();
         json.getAsJsonArray("trechos").forEach(e -> lista.add(gson.fromJson(e, TrechoRef.class)));
         return lista;
+    }
+
+    /** Confirma uma reserva em um peer para um passageiro do consórcio. */
+    public String reservarTrechos(String urlBase, String loginPassageiro, List<TrechoRef> trechos) {
+        if (trechos == null || trechos.isEmpty()) {
+            throw new PeerIndisponivelException("Lista de trechos vazia para reserva distribuída.");
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("passageiroLogin", loginPassageiro);
+        payload.put("trechos", trechos);
+        String corpo = gson.toJson(payload);
+        String url = urlBase + ServidorApi.PREFIXO + "/reservas";
+        JsonObject json = gson.fromJson(post(url, corpo), JsonObject.class);
+        if (!json.get("sucesso").getAsBoolean()) {
+            throw new PeerIndisponivelException(json.has("mensagem")
+                    ? json.get("mensagem").getAsString()
+                    : "Reserva distribuída recusada pelo peer");
+        }
+        return json.get("idReserva").getAsString();
+    }
+
+    /** Cancela uma reserva distribuída em um peer. */
+    public boolean cancelarReserva(String urlBase, String loginPassageiro, String idReserva) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("passageiroLogin", loginPassageiro);
+        payload.put("idReserva", idReserva);
+        String corpo = gson.toJson(payload);
+        String url = urlBase + ServidorApi.PREFIXO + "/reservas/cancelar";
+        JsonObject json = gson.fromJson(post(url, corpo), JsonObject.class);
+        return json.has("sucesso") && json.get("sucesso").getAsBoolean();
+    }
+
+    /** Consulta o estado de uma reserva remota. */
+    public String consultarStatusReserva(String urlBase, String idReserva, String loginPassageiro) {
+        String url = urlBase + ServidorApi.PREFIXO + "/reservas/estado?idReserva="
+                + URLEncoder.encode(idReserva, StandardCharsets.UTF_8)
+                + "&login=" + URLEncoder.encode(loginPassageiro, StandardCharsets.UTF_8);
+        JsonObject json = gson.fromJson(get(url), JsonObject.class);
+        if (json.has("status")) {
+            return json.get("status").getAsString();
+        }
+        return "INEXISTENTE";
+    }
+
+    private String post(String url, String corpo) {
+        HttpRequest requisicao = HttpRequest.newBuilder(URI.create(url))
+                .timeout(timeout)
+                .header("Accept", "application/json")
+                .header("Content-Type", "application/json; charset=utf-8")
+                .POST(HttpRequest.BodyPublishers.ofString(corpo, StandardCharsets.UTF_8))
+                .build();
+        try {
+            HttpResponse<String> resposta = http.send(requisicao, HttpResponse.BodyHandlers.ofString());
+            if (resposta.statusCode() != 200) {
+                throw new PeerIndisponivelException("HTTP " + resposta.statusCode() + " em " + url);
+            }
+            return resposta.body();
+        } catch (IOException e) {
+            throw new PeerIndisponivelException("Sem resposta de " + url + " (" + e.getClass().getSimpleName() + ")", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new PeerIndisponivelException("Interrompido ao chamar " + url, e);
+        }
     }
 
     private String get(String url) {

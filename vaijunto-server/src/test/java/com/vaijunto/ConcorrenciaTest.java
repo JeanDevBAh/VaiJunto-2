@@ -23,6 +23,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
+import model.Cidades;
 import model.TipoUser;
 import network.DTORequest;
 import network.DTOResponse;
@@ -101,6 +102,46 @@ public class ConcorrenciaTest {
             assertEquals(1, sucessos);
         } finally {
             executor.shutdownNow();
+        }
+    }
+
+    @Test
+    public void deveReservarTrechoDeOutraEmpresa() throws Exception {
+        ServerSocket socketPeer = new ServerSocket(0);
+        int portaPeer = socketPeer.getLocalPort();
+        socketPeer.close();
+
+        controller.GegenciarGeral peer = new controller.GegenciarGeral(null, "EMPRESA_B", Map.of());
+        api.ServidorApi apiPeer = new api.ServidorApi(portaPeer, "EMPRESA_B", peer);
+        apiPeer.iniciar();
+
+        try {
+            controller.GegenciarGeral local = new controller.GegenciarGeral(null, "EMPRESA_A", Map.of("EMPRESA_B", "http://127.0.0.1:" + portaPeer));
+            assertTrue(local.cadastrarUsuario("passageiro-distribuido", "senha", TipoUser.PASSAGEIRO));
+            String tokenPassageiro = local.fazerLogin("passageiro-distribuido", "senha");
+            assertTrue(peer.cadastrarUsuario("passageiro-distribuido", "senha", TipoUser.PASSAGEIRO));
+            String tokenPeer = peer.fazerLogin("passageiro-distribuido", "senha");
+
+            assertTrue(peer.cadastrarUsuario("motorista-peer", "senha", TipoUser.MOTORISTA));
+            String tokenMotorista = peer.fazerLogin("motorista-peer", "senha");
+            String idCarona = peer.oferecerCarona(
+                    tokenMotorista,
+                    List.of(Cidades.VALENTINE, Cidades.RHODES),
+                    "2099-12-31",
+                    "10:00",
+                    2,
+                    true,
+                    List.of(25.0));
+            assertNotNull(idCarona);
+
+            List<model.Itinerario> itinerarios = local.buscarViagens(Cidades.VALENTINE, Cidades.RHODES, "2099-12-31");
+            assertTrue("Deveria encontrar a viagem do peer", !itinerarios.isEmpty());
+
+            String idReserva = local.reservarViagem(tokenPassageiro, itinerarios.get(0));
+            assertNotNull(idReserva);
+            assertTrue("Reserva distribuída não foi registrada no peer", !peer.listarReservas(tokenPeer).isEmpty());
+        } finally {
+            apiPeer.parar();
         }
     }
 

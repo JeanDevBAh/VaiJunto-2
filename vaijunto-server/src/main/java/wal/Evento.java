@@ -46,6 +46,10 @@ public class Evento {
     public String passageiroId;
     public List<TrechoRef> trechos;
 
+    // --- reserva distribuída ---
+    public String idLocal;
+    public List<ReservaDistribuidaRef> reservasRemotas;
+
     /** Referência a um trecho: o id da carona mais o par de cidades. */
     public static class TrechoRef {
         public String caronaId;
@@ -59,6 +63,19 @@ public class Evento {
             this.caronaId = caronaId;
             this.origem = origem;
             this.destino = destino;
+        }
+    }
+
+    public static class ReservaDistribuidaRef {
+        public String empresaId;
+        public String idRemota;
+
+        public ReservaDistribuidaRef() {
+        }
+
+        public ReservaDistribuidaRef(String empresaId, String idRemota) {
+            this.empresaId = empresaId;
+            this.idRemota = idRemota;
         }
     }
 
@@ -125,6 +142,36 @@ public class Evento {
         Evento e = new Evento();
         e.tipo = TipoEvento.RESERVA_CANCELADA;
         e.id = idReserva;
+        return e;
+    }
+
+    public static Evento reservaDistribuidaIniciada(String idLocal, String login, List<ReservaDistribuidaRef> reservasRemotas) {
+        Evento e = new Evento();
+        e.tipo = TipoEvento.RESERVA_DISTRIBUIDA_INICIADA;
+        e.id = idLocal;
+        e.login = login;
+        e.idLocal = idLocal;
+        e.reservasRemotas = reservasRemotas == null ? new ArrayList<>() : new ArrayList<>(reservasRemotas);
+        return e;
+    }
+
+    public static Evento reservaDistribuidaConfirmada(String idLocal, List<ReservaDistribuidaRef> reservasRemotas) {
+        Evento e = new Evento();
+        e.tipo = TipoEvento.RESERVA_DISTRIBUIDA_CONFIRMADA;
+        e.id = idLocal;
+        e.idLocal = idLocal;
+        e.login = idLocal;
+        e.reservasRemotas = reservasRemotas == null ? new ArrayList<>() : new ArrayList<>(reservasRemotas);
+        return e;
+    }
+
+    public static Evento reservaDistribuidaCancelada(String idLocal, List<ReservaDistribuidaRef> reservasRemotas) {
+        Evento e = new Evento();
+        e.tipo = TipoEvento.RESERVA_DISTRIBUIDA_CANCELADA;
+        e.id = idLocal;
+        e.idLocal = idLocal;
+        e.login = idLocal;
+        e.reservasRemotas = reservasRemotas == null ? new ArrayList<>() : new ArrayList<>(reservasRemotas);
         return e;
     }
 }
