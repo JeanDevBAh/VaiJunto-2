@@ -1,0 +1,45 @@
+services:
+  empresa-a:
+    image: seuusuario/vaijunto-server:latest
+    container_name: vaijunto-empresa-a
+    environment:
+      EMPRESA_ID: EMPRESA_A
+      PORTA_TCP: 8080
+      PORTA_HTTP: 7070
+      DATA_DIR: /data/empresa_a
+      CONSORCIO_TOKEN: vaijunto-local-token
+      PEERS: "EMPRESA_B=http://empresa-b:7071,EMPRESA_C=http://empresa-c:7072"
+    ports:
+      - "8080:8080"
+      - "7070:7070"
+    restart: unless-stopped
+
+  empresa-b:
+    image: seuusuario/vaijunto-server:latest
+    container_name: vaijunto-empresa-b
+    environment:
+      EMPRESA_ID: EMPRESA_B
+      PORTA_TCP: 8081
+      PORTA_HTTP: 7071
+      DATA_DIR: /data/empresa_b
+      CONSORCIO_TOKEN: vaijunto-local-token
+      PEERS: "EMPRESA_A=http://empresa-a:7070,EMPRESA_C=http://empresa-c:7072"
+    ports:
+      - "8081:8081"
+      - "7071:7071"
+    restart: unless-stopped
+
+  empresa-c:
+    image: seuusuario/vaijunto-server:latest
+    container_name: vaijunto-empresa-c
+    environment:
+      EMPRESA_ID: EMPRESA_C
+      PORTA_TCP: 8082
+      PORTA_HTTP: 7072
+      DATA_DIR: /data/empresa_c
+      CONSORCIO_TOKEN: vaijunto-local-token
+      PEERS: "EMPRESA_A=http://empresa-a:7070,EMPRESA_B=http://empresa-b:7071"
+    ports:
+      - "8082:8082"
+      - "7072:7072"
+    restart: unless-stopped
