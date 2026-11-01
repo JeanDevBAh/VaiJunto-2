@@ -142,6 +142,23 @@ curl http://127.0.0.1:7071/api/v1/saude
 curl http://127.0.0.1:7072/api/v1/saude
 ```
 
+## Simulador de passageiros
+
+O cliente do projeto inclui um simulador de carga para exercitar o sistema com múltiplos passageiros concorrentes. Ele cria usuários, faz login, pesquisa viagens, seleciona itinerários e reserva assentos em sequência, usando todas as empresas configuradas.
+
+```bash
+cd vaijunto-client
+./rodar-simulador.sh --usuarios=20 --iteracoes=5 --servidores=127.0.0.1:8080,127.0.0.1:8081,127.0.0.1:8082
+```
+
+Também é possível sobrescrever via propriedades do Java:
+
+```bash
+mvn -q -DskipTests compile exec:java \
+  -Dexec.mainClass="simulador.SimuladorPassageiros" \
+  -Dexec.args="--usuarios=50 --iteracoes=10 --servidores=127.0.0.1:8080,127.0.0.1:8081,127.0.0.1:8082"
+```
+
 ## Observações de projeto
 
 - A comunicação entre servidores é somente via HTTP, com token compartilhado em cabeçalho `X-Consorcio-Token`.
