@@ -168,60 +168,60 @@ mvn -q -DskipTests compile exec:java \
 
 ## Visão do barema do problema 2
 
-O problema 2 avalia a arquitetura distribuída do consórcio e exige que o sistema demonstre, ao mesmo tempo, coerência operacional e tolerância a falhas. Os itens abaixo resumem os pontos em que o sistema é cobrado na apresentação e no relatório.
+O Problema 2 tem como objetivo avaliar a arquitetura distribuída do consórcio de caronas compartilhadas, exigindo não apenas a funcionalidade do sistema, mas também a demonstração de consistência, concorrência controlada, tolerância a falhas e recuperação após interrupções. A solução proposta foi concebida para operar sem um coordenador global centralizado, mantendo o controle de vagas e da confirmação de reservas de forma local e distribuída entre as empresas participantes.
 
-### 1) Arquitetura
+### 1) Arquitetura do sistema
 
-Cada empresa executa uma instância do backend com:
+Cada empresa participante do consórcio executa uma instância independente do backend, composta por diversos módulos com funções específicas:
 
-- `ServidorTCP`: recebe clientes locais e faz autenticação e operações do usuário;
-- `ServidorApi`: expõe a API REST para comunicação com outras empresas;
-- `GegenciarGeral`: coordena serviços de usuário, caronas e reservas;
-- `Grafo`: mantém as caronas e trechos registrados na empresa;
-- `Wal`: persiste eventos antes de aplicar efeitos;
-- `ClienteConsorcio`: envia requisições para peers e trata falha de resposta como `PeerIndisponivelException`;
-- `MonitorPeers`: verifica periodicamente a saúde dos outros servidores e detecta transições `ONLINE/OFFLINE`.
+- `ServidorTCP`: responsável por receber os clientes locais, autenticar usuários e processar operações do motorista e do passageiro;
+- `ServidorApi`: expõe a API REST utilizada na comunicação entre empresas do consórcio;
+- `GegenciarGeral`: centraliza a lógica de negócio e coordena os serviços de usuário, caronas e reservas;
+- `Grafo`: mantém a representação das caronas e trechos da empresa;
+- `Wal`: registra eventos essenciais em log de escrita antecipada, antes da aplicação dos efeitos de negócio;
+- `ClienteConsorcio`: executa chamadas HTTP aos peers e trata falhas de comunicação como indisponibilidade do servidor remoto;
+- `MonitorPeers`: realiza verificação periódica da disponibilidade dos demais servidores e registra mudanças de estado (`ONLINE`/`OFFLINE`).
 
-A principal diferença para a arquitetura centralizada do Problema 1 é que a decisão de assento passa a ser distribuída e local a cada empresa dona do trecho. Isso elimina um único ponto de falha, mas exige o uso de protocolo de coordenação, confirmação e tratamento de concorrência entre empresas distintas.
+A arquitetura do presente projeto difere da abordagem centralizada do Problema 1, no qual a decisão sobre disponibilidade e confirmação era concentrada em um único ponto. No modelo distribuído adotado, cada empresa é responsável por seus trechos e pelo controle local de vagas. Essa mudança reduz o ponto único de falha, mas exige mecanismos explícitos de coordenação entre empresas, recuperação de estado e tratamento de concorrência.
 
-### 2) Comunicação (API REST)
+### 2) Comunicação entre servidores via API REST
 
-A comunicação entre empresas usa HTTP, com prefixo `/api/v1`. Os principais recursos são:
+A comunicação entre as empresas do consórcio é realizada por meio de HTTP, com prefixo `/api/v1` e autenticação por cabeçalho `X-Consorcio-Token`. Os principais recursos expostos são os seguintes:
 
-- `GET /saude`: retorna `empresaId` e `status`;
-- `GET /trechos?data=YYYY-MM-DD`: lista trechos disponíveis numa data;
-- `POST /reservas`: confirma uma reserva remota; responde `200` em sucesso e `409` em conflito;
-- `GET /reservas/estado?idReserva=...&login=...`: consulta estado da reserva;
+- `GET /saude`: responde com o identificador da empresa e o status do servidor;
+- `GET /trechos?data=YYYY-MM-DD`: retorna os trechos disponíveis em uma determinada data;
+- `POST /reservas`: confirma uma reserva remota e retorna `200` em caso de sucesso ou `409` em caso de conflito;
+- `GET /reservas/estado?idReserva=...&login=...`: consulta o estado de uma reserva;
 - `POST /tx/{txId}/prepare`: prepara a transação de um itinerário em um peer;
-- `POST /tx/{txId}/commit`: materializa o resultado positivo;
-- `POST /tx/{txId}/abort`: cancela a transação;
-- `GET /tx/{txId}/estado`: consulta o estado da transação local.
+- `POST /tx/{txId}/commit`: confirma a transação;
+- `POST /tx/{txId}/abort`: aborta a transação;
+- `GET /tx/{txId}/estado`: consulta o estado atual da transação.
 
-Cada chamada tem timeout configurado pelo cliente (`HttpClient` com timeout de 2 segundos) e falha de rede ou resposta inesperada é tratada como indisponibilidade do peer. Quando uma mesma requisição é repetida, o comportamento é idempotente por `txId` e por `idReserva`: a confirmação não deve criar efeitos duplicados e o servidor responde com o estado já conhecido em vez de repetir a operação.
+As requisições entre servidores possuem timeout configurado no cliente, de modo que falhas de rede ou respostas demoradas são tratadas como indisponibilidade do peer. Além disso, a operação foi projetada para ser idempotente por `txId` e por `idReserva`, de modo que a repetição de uma mesma requisição não resulte em efeitos duplicados nem em inconsistência do estado global do consórcio.
 
-### 3) Busca distribuída
+### 3) Busca distribuída de itinerários
 
-A busca de itinerários envolve caronas publicadas em outras empresas. Um servidor cliente consulta primeiro os seus trechos locais e, em seguida, chama os peers para listar trechos disponíveis na data desejada. A estratégia adotada é uma consulta em tempo real sobre a base de cada empresa, sem depender de um banco global ou catálogo central.
+A busca por itinerários em empresas distintas é realizada mediante consulta em tempo real aos servidores dos peers. Quando um cliente solicita uma viagem, o servidor local consulta primeiro os trechos da própria empresa e, em seguida, chama as demais empresas para listar trechos de interesse em uma determinada data.
 
-Quando uma empresa fica fora do ar, o cliente não bloqueia a operação inteira: a falha é percebida como indisponibilidade do peer e a viagem pode continuar sendo montada com base nas empresas que responderam. O sistema preserva a funcionalidade da operação e trata a falha como um caso normal de participação parcial do consórcio.
+A estratégia adotada usa a base local de cada empresa como fonte de verdade para o conhecimento dos trechos e, portanto, evita a necessidade de um catálogo centralizado ou de um banco compartilhado. Caso uma empresa esteja indisponível, o funcionamento do consórcio não é interrompido em sua totalidade: as operações continuam considerando somente as empresas respondentes, e a falha é tratada como um caso normal de participação parcial do sistema distribuído.
 
-### 4) Exclusão mútua
+### 4) Exclusão mútua de assentos
 
-A exclusão mútua é implementada no nível do trecho, que é o recurso crítico do sistema. O objeto `Trecho` possui métodos sincronizados (`reservarLugar`, `liberarLugar`, leitura de disponibilidade), e cada operação que altera a contagem de vagas e a lista de passageiros é serializada pelo lock do próprio trecho.
+A exclusão mútua é obtida no nível do trecho, que constitui o recurso crítico do sistema. Cada instância de `Trecho` encapsula a lógica de controle de vagas e a lista de passageiros confirmados. Os métodos que alteram a disponibilidade do trecho são sincronizados, de modo que a atualização da contagem de assentos e da lista de passageiros é serializada por um lock local.
 
-Isso garante que o mesmo assento de um mesmo trecho não seja confirmado para dois passageiros em concorrência. A decisão da vaga é realizada pelo servidor que detém aquele trecho, que é a autoridade para validar a disponibilidade. Isso evita inconsistência mesmo quando requisições chegam simultaneamente de empresas distintas.
+Esse mecanismo garante que o mesmo assento de um mesmo trecho não seja confirmado para dois passageiros simultaneamente, mesmo quando requisições concorrentes chegam de diferentes empresas. A empresa dona do trecho é a autoridade responsável pela validação da disponibilidade, o que resolve o conflito deterministically e evita inconsistência de estado.
 
-### 5) Atomicidade distribuída
+### 5) Atomicidade distribuída da confirmação de itinerários
 
-A confirmação de um itinerário com trechos de empresas diferentes é feita por um protocolo leve de 2PC (two-phase commit):
+A confirmação de um itinerário que envolve trechos de empresas diferentes é implementada por meio de um protocolo leve de 2PC (two-phase commit). O processo segue os seguintes passos:
 
-1. O coordenador do itinerário gera um `txId` único;
-2. os peers recebem `POST /tx/{txId}/prepare` com os trechos e o login;
-3. cada par participa e responde `200 PREPARADA` ou `409` em caso de conflito;
-4. se todos prepararem, o coordenador grava a transação como `COMMIT` no WAL e envia `commit` aos peers;
-5. se algum participante recusar, o coordenador grava `ABORT` no WAL e notifica os demais peers para cancelar a operação.
+1. O coordenador da transação gera um identificador único `txId`;
+2. cada peer recebe uma requisição `POST /tx/{txId}/prepare` com o login do passageiro e os trechos envolvidos;
+3. o participante avalia a disponibilidade e responde `200` com `PREPARADA` ou `409` em caso de conflito;
+4. se todos os participantes prepararem a transação, o coordenador registra a decisão no WAL e envia `commit` aos peers;
+5. caso algum participante recuse, o coordenador registra `ABORT` no WAL e envia `abort` aos demais participantes para que os trechos já reservados sejam liberados.
 
-A transação fica registrada em estado local (`INICIADA`, `PREPARADA`, `COMMIT`, `ABORT`, etc.) e pode ser reprocessada após falha. Quando um participante recusa, os trechos já reservados em outros participantes devem ser liberados para manter a atomicidade do itinerário completo.
+A transação possui estados locais bem definidos (`INICIADA`, `PREPARADA`, `COMMIT`, `ABORT`, e variações de confirmação), permitindo reprocessamento após falhas. O uso de `txId` garante idempotência e possibilita que a operação seja retomada sem duplicar efeitos colaterais no consórcio.
 
 ```mermaid
 sequenceDiagram
@@ -252,65 +252,72 @@ sequenceDiagram
     end
 ```
 
-### 6) Precedência do último assento
+### 6) Critério de precedência do último assento
 
-O critério usado é "quem detém o lock do trecho decide". Não existe dependência de relógio de parede nem comparação de timestamps entre empresas. Cada servidor serializa a disputa pelo trecho localmente; a primeira operação que obtém o lock do trecho ganha a reserva e a segunda recebe `409`, aborta e informa o cliente que a vaga foi perdida.
+Para decidir qual passageiro permanece com o último assento de um trecho quando há concorrência entre diferentes empresas, o sistema adota o critério de que a empresa dona do trecho é responsável pela decisão. A disputa é serializada pelo lock do trecho em seu servidor local, e a primeira operação que obtém o lock ganha a vaga. A segunda operação, ao não conseguir adquirir o lock, recebe `409` e conclui em aborto.
 
-Isso é determinístico e permanece válido mesmo com atrasos de rede ou relógios desalinhados, porque a decisão se baseia na ordem local de aquisição do lock, e não na ordem de envio das mensagens.
+Esse critério é adequado para um ambiente sem sincronização de relógios entre servidores, pois não depende de marcação temporal global ou de relógios de parede. A decisão é baseada na ordem local de aquisição do lock e, consequentemente, é determinística mesmo diante de atrasos na rede ou desalinhos temporais entre os nós.
 
 ### 7) Deadlock distribuído
 
-A estratégia para evitar deadlocks é não permitir que duas transações adquiram recursos em ordens incompatíveis. A decisão de cada trecho é sempre centralizada no dono do trecho, e o lock do trecho funciona como unidade de serialização. Quando duas reservas tentam ocupar os mesmos trechos de empresas diferentes em ordens distintas, o conflito é resolvido pela ordem de aquisição do lock em cada empresa; não há ciclo de espera entre servidores.
+A solução evitou a formação de deadlocks distribuídos ao não permitir que transações concorrentes adquiram recursos em ordens inconsistentes. Como cada trecho é controlado por seu servidor proprietário e a concessão da reserva é tratada por lock local, não há ciclo de espera entre empresas. Quando duas transações competem por trechos em ordem distinta, uma delas é abortada e a outra continua, evitando bloqueio permanente.
 
-O custo dessa escolha é que algumas requisições podem receber `409` e abortar quando houver disputa intensa, mas isso preserva a consistência do sistema e evita bloqueios permanentes.
+Esse mecanismo reduz o risco de impasse, embora implique que algumas requisições sejam rejeitadas em cenários de alta concorrência. Em compensação, o sistema preserva a consistência do estado e evita que o consórcio fique bloqueado por espera circular.
 
 ### 8) Tolerância a falhas
 
-O sistema trata a falha de um peer como parte do comportamento normal do ambiente distribuído.
+A tolerância a falhas foi considerada como requisito central do projeto. Quando um peer falha antes da confirmação de um itinerário, a operação simplesmente não recebe resposta em tempo hábil e é tratada como indisponibilidade transitória. Quando a falha ocorre durante a execução da transação, a operação pode ficar pendente até que o servidor retorne e reprocessa o estado persistido em log. Quando a falha acontece após a confirmação, o sistema usa o registro de eventos para restaurar o estado correto ao reiniciar o serviço.
 
-- antes de uma confirmação: o peer pode estar indisponível e o cliente simplesmente não recebe resposta dentro do timeout;
-- durante a confirmação: um peer pode falhar após aceitar `prepare` mas antes de receber `commit` ou `abort`; nisso, a transação continua pendente e será tratada por retry ou por reprocessamento do WAL;
-- depois da confirmação: o servidor pode voltar e consultar o estado da transação, reaproveitando o estado persistido no log.
-
-A detecção é feita por `MonitorPeers`, que roda `GET /saude` em intervalos regulares e registra a mudança de estado do peer. O restante do consórcio continua operando mesmo quando uma empresa cai, e os efeitos de um servidor indisponível ficam contidos na empresa específica sem derrubar todo o sistema.
+A detecção de indisponibilidade é feita pelo `MonitorPeers`, que executa verificações periódicas de saúde em cada peer e registra eventos de mudança de estado. Esse mecanismo permite que o restante do consórcio continue operando mesmo quando uma empresa deixa de responder, sem comprometer a disponibilidade geral do sistema.
 
 ### 9) Recuperação e persistência
 
-A persistência é feita em WAL (`Write-Ahead Log`), que registra cada evento antes de aplicar o efeito correspondente. O log contém eventos como cadastro de usuários, criação de carona, criação e cancelamento de reservas e transações de coordenação.
+A recuperação do estado do sistema é implementada por meio de WAL (`Write-Ahead Log`). Cada evento relevante do sistema, como cadastro de usuários, criação de carona, reserva e transações distribuídas, é registrado antes da aplicação do efeito correspondente. Esse procedimento garante que a confirmação do evento seja durável mesmo em caso de interrupção abrupta.
 
-O fluxo de recuperação é:
+Ao reiniciar um servidor, o sistema realiza os seguintes passos:
 
-1. ao iniciar, o servidor lê o arquivo de log em ordem;
-2. verifica CRC e descarta linha final incompleta em caso de queda abrupta;
-3. reexecuta os eventos válidos para reconstruir o estado da empresa;
-4. reprocessa reservas e transações pendentes de acordo com o estado do WAL;
-5. volta a aceitar novas requisições sem perder consistência.
+1. lê o arquivo de log em ordem;
+2. valida o CRC de cada entrada;
+3. descarta a última linha truncada ou incompleta em cenários de queda abrupta;
+4. reprocessa os eventos válidos para reconstruir o estado da empresa;
+5. retoma a operação normal sem inconsistências causadas por falha externa.
 
-Além disso, as regras de idempotência evitam que operações repetidas criem efeitos duplicados. Esta capacidade de recuperação é o mecanismo central para garantir consistência após falha.
+A persistência em WAL e o uso de identificadores de transação (`txId`) são fundamentais para a garantia de consistência e idempotência após recuperação, evitando que reservas ou confirmações sejam aplicadas mais de uma vez.
 
-### 10) Testes
+### 10) Testes de validação
 
-O projeto inclui testes de software para verificar concorrência e consistência. Os principais cenários cobertos são:
+Para validar o comportamento do sistema, foram desenvolvidos testes focados em concorrência e consistência. Os principais cenários avaliados incluem:
 
-- cadastro simultâneo de muitos usuários distintos;
-- rejeição de logins duplicados;
-- reserva remota entre empresas diferentes;
-- concorrência de múltiplos passageiros disputando o último assento;
-- validação do comportamento de transação e devolução de estados em cenário de falha local.
+- cadastro simultâneo de múltiplos usuários distintos;
+- rejeição de cadastro de mesmo login em concorrência;
+- reserva remota entre empresas distintas;
+- disputa por último assento por vários passageiros simultaneamente;
+- recuperação do estado de transações após falha local.
 
-A execução desses testes validou que a solução mantém a exclusão mútua e evita que o número de reservas ultrapasse a capacidade do trecho, mesmo sob carga concorrente.
+Os testes demonstraram que a solução preserva a exclusão mútua, limita o número de confirmações ao número de vagas disponíveis e mantém o comportamento do consórcio estável sob carga concorrente.
 
 ### 11) Emulação em Docker
 
-Os servidores do consórcio foram executados em containers Docker em computadores distintos do laboratório, usando `docker-compose.lab.yml` para levantar três empresas: `EMPRESA_A`, `EMPRESA_B` e `EMPRESA_C`.
+Os servidores do consórcio foram executados em contêineres Docker em máquinas distintas do laboratório, utilizando o arquivo `docker-compose.lab.yml` para orquestrar três empresas: `EMPRESA_A`, `EMPRESA_B` e `EMPRESA_C`.
 
-Cada container expõe:
+Cada contêiner expõe:
 
-- TCP local de cliente em `127.0.0.1:8080`, `8081` e `8082`;
-- HTTP de peer em `127.0.0.1:7070`, `7071` e `7072`;
-- um volume dedicado para o diretório de dados da empresa;
-- a mesma chave compartilhada `CONSORCIO_TOKEN` e listas de peers distintas.
+- porta TCP para clientes locais em `127.0.0.1:8080`, `8081` e `8082`;
+- porta HTTP de comunicação entre peers em `127.0.0.1:7070`, `7071` e `7072`;
+- volume dedicado para armazenamento local da empresa;
+- uma chave compartilhada `CONSORCIO_TOKEN` e lista de peers específica para cada instância.
 
-A emulação da falha pode ser feita pela parada de um service do Docker (`docker compose stop empresa-b`, por exemplo). A apresentação pode então observar que os outros servidores continuam respondendo e que a empresa fora do ar é marcada como offline pelo monitor, com a operação do consórcio sendo retomada conforme o restante da infraestrutura continua ativa.
+Durante a apresentação, a falha de uma empresa pode ser simulada pela interrupção do contêiner correspondente. A observação do sistema em execução permite verificar que os outros servidores continuam respondendo e que a empresa fora do ar é sinalizada como indisponível pelo monitor, sem interromper completamente o funcionamento do consórcio.
 
+## Checklist para apresentação
 
+Durante a apresentação do projeto, o grupo deve demonstrar, de forma objetiva e completa, os seguintes aspectos:
+
+- operação do consórcio com três empresas em funcionamento;
+- busca de itinerários entre empresas distintas;
+- processamento de reservas concorrentes e tratamento de conflitos;
+- execução do protocolo de `prepare`, `commit` e `abort`;
+- recuperação de estado após falha de uma empresa;
+- observação do comportamento do monitor de peers e da continuação do funcionamento do consórcio em presença de indisponibilidade.
+
+Esses elementos estão diretamente alinhados com o barema do Problema 2 e permitem validar tanto a funcionalidade da solução quanto sua robustez em um ambiente distribuído e sujeito a falhas.
