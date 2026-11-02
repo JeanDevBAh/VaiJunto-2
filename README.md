@@ -1,310 +1,204 @@
-# VaiJunto 2
+# VaiJunto 2.0 — Consórcio Distribuído de Caronas Compartilhadas
 
-Este projeto implementa um consórcio de caronas compartilhadas entre empresas independentes. Cada empresa executa seu próprio servidor TCP para clientes e uma API REST para comunicação entre servidores.
+O **VaiJunto 2.0** é uma solução distribuída e descentralizada em consórcio *peer-to-peer* (P2P) para o compartilhamento de caronas intermunicipais[cite: 4]. O sistema permite a cooperação entre diferentes plataformas/empresas de caronas sem a necessidade de um servidor centralizador ou banco de dados compartilhado[cite: 4, 5].
 
-## Arquitetura
+Cada empresa opera sua própria aplicação de servidor[cite: 5], gerenciando exclusivamente a sua base de usuários e o estoque de vagas dos seus trechos[cite: 4, 5]. A montagem e a reserva de itinerários multi-empresas ocorrem por meio de rotas REST inter-servidores[cite: 1, 5] e de um protocolo de transação distribuída de duas fases (*Two-Phase Commit* — 2PC)[cite: 1, 2].
 
-- `vaijunto-server` contém a lógica de negócio, WAL, peer API e serviços de reserva.
-- Cada instância tem:
-  - `EMPRESA_ID`: identidade da empresa;
-  - `PORTA_TCP`: porta para clientes;
-  - `PORTA_HTTP`: porta da API REST entre servidores;
-  - `PEERS`: lista de outros servidores do consórcio (formato `ID=http://host:porta`);
-  - `CONSORCIO_TOKEN`: token compartilhado entre servidores para validar comunicação.
-- O log WAL (`data/wal.log`) registra eventos antes de aplicar efeitos, permitindo recomeço em caso de falha.
+---
 
-## Fluxo de commit distribuído
+## 🚀 Arquitetura do Sistema
 
-```mermaid
-sequenceDiagram
-    participant U as Usuário
-    participant C as Coordenador
-    participant P1 as Peer A
-    participant P2 as Peer B
-    participant P3 as Peer C
+```
++-------------------+           +-------------------+
+|  Cliente (JavaFX) |           |  Cliente (JavaFX) |
++---------+---------+           +---------+---------+
+          | Socket TCP                    | Socket TCP
+          v                               v
++---------+---------+   REST API   +---------+---------+
+| Servidor Empresa A | <=========> | Servidor Empresa B |
++---------+---------+  (HTTP/JSON) +---------+---------+
+          | WAL                            | WAL
+          v                                v
+    [ wal.log ]                      [ wal.log ]
 
-    U->>C: reservar itinerário (A+B+C)
-    C->>C: gera txId + registra TX_INICIADA no WAL
-    C->>P1: POST /api/v1/tx/{txId}/prepare
-    C->>P2: POST /api/v1/tx/{txId}/prepare
-    C->>P3: POST /api/v1/tx/{txId}/prepare
-    P1-->>C: 200 PREPARADA
-    P2-->>C: 200 PREPARADA
-    P3-->>C: 409 sem vaga / abort
-    alt todos prepararam
-        C->>C: grava TX_COMMIT no WAL
-        C->>P1: POST /api/v1/tx/{txId}/commit
-        C->>P2: POST /api/v1/tx/{txId}/commit
-        C->>P3: POST /api/v1/tx/{txId}/commit
-    else algum participante falhou
-        C->>C: grava TX_ABORT no WAL
-        C->>P1: POST /api/v1/tx/{txId}/abort
-        C->>P2: POST /api/v1/tx/{txId}/abort
-        C->>P3: POST /api/v1/tx/{txId}/abort
-    end
 ```
 
-## API entre servidores
+### Componentes Chave:
 
-Prefixo: `/api/v1`
+* **`vaijunto-client`**: Aplicação cliente (GUI JavaFX e simulador headless)[cite: 1]. Conecta-se exclusivamente ao servidor TCP da sua empresa de origem[cite: 1, 5].
+* **`vaijunto-server`**: Nó autônomo do consórcio[cite: 1, 5]. Contém os serviços de negócio, barramento TCP local para clientes, API REST para *peers*, motor de busca em grafo, gerenciador de locks e log de persistência WAL[cite: 1, 2].
 
-### GET `/saude`
-- Responde: `200 OK`
-- Corpo:
-  ```json
-  {"empresaId":"EMPRESA_A","status":"OK"}
-  ```
+---
 
-### GET `/trechos?data=YYYY-MM-DD`
-- Responde: `200 OK`
-- Corpo:
-  ```json
-  {
-    "empresaId": "EMPRESA_A",
-    "data": "2026-11-01",
-    "trechos": [
-      {"trechoId":"EMPRESA_A:carona-1:VALENTINE>RHODES","empresaId":"EMPRESA_A","caronaId":"carona-1","origem":"VALENTINE","destino":"RHODES","data":"2026-11-01","preco":25.0,"vagas":2}
-    ]
-  }
-  ```
+## 🛠️ Principais Recursos Distribuídos
 
-### POST `/reservas`
-- Corpo:
-  ```json
-  {
-    "passageiroLogin": "joao",
-    "trechos": [
-      {"caronaId":"carona-1","origem":"VALENTINE","destino":"RHODES","empresaId":"EMPRESA_A","data":"2026-11-01","preco":25.0,"vagas":2}
-    ]
-  }
-  ```
-- Respostas:
-  - `200`: reserva confirmada
-  - `409`: conflito de vagas ou rejeição do peer
-  - `400`: payload inválido
+1. **Busca Distribuída em Tempo Real (`Grafo.java`)**:
+* Algoritmo DFS (Busca em Profundidade) que combina trechos de caronas locais com trechos descobertos via chamadas REST (`GET /api/caronas/origem-destino`) nos *peers* ativos[cite: 1].
 
-### GET `/reservas/estado?idReserva=...&login=...`
-- Responde: `200 OK` com:
-  ```json
-  {"status":"ATIVA","idReserva":"..."}
-  ```
 
-### POST `/tx/{txId}/prepare`
-- Corpo:
-  ```json
-  {
-    "login": "joao",
-    "ttlMs": 10000,
-    "trechos": [
-      {"caronaId":"carona-1","origem":"VALENTINE","destino":"RHODES"}
-    ]
-  }
-  ```
-- Respostas:
-  - `200`: `{"txId":"...","sucesso":true,"estado":"PREPARADA"}`
-  - `409`: sem vaga / conflito
+2. **Atomicidade Distribuída — Protocolo 2PC (`ReservaService.java` & `ClienteConsorcio.java`)**:
+* **Fase 1 (Prepare)**: Solicita a reserva temporária/bloqueio dos assentos aos servidores parceiros[cite: 1, 2].
+* **Fase 2 (Commit / Rollback)**: Se todos aprovarem, efetiva a confirmação (`/confirmar`)[cite: 1, 2]. Caso qualquer parceiro recuse ou caia, dispara a mensagem de cancelamento (`/cancelar`) para todos os trechos previamente bloqueados[cite: 1, 2].
 
-### POST `/tx/{txId}/commit`
-- Responde: `200 OK` ou `409`
 
-### POST `/tx/{txId}/abort`
-- Responde: `200 OK` ou `409`
+3. **Exclusão Mútua & Precedência (`CaronaService.java`)**:
+* Controle estrito de concorrência local por travas (`ReentrantLock` / `synchronized`) no nó dono do trecho[cite: 1]. A ordenação de chegada no nó validador desempata disputas simultâneas em relógios desincronizados[cite: 1, 2].
 
-### GET `/tx/{txId}/estado`
-- Responde:
-  ```json
-  {"txId":"...","estado":"PREPARADA|COMMIT|ABORT","empresaId":"EMPRESA_A"}
-  ```
 
-## Critério de precedência do último assento
+4. **Prevenção de Deadlocks Distribuídos**:
+* Ordenação determinística na requisição de recursos e uso de *timeouts* curtos de conexão HTTP em `ClienteConsorcio.java`[cite: 1, 6].
 
-O último assento é decidido pelo dono do trecho. Não há dependência de relógio de parede entre servidores. A disputa é serializada pelo lock do trecho no servidor responsável por aquele trecho; quem ganhar o lock primeiro confirma a reserva e quem perder recebe `409` e aborta. Assim, a decisão é determinística e não sofre com relógios desalinhados.
 
-## Como subir 3 instâncias localmente
+5. **Tolerância a Falhas & Monitoramento (`MonitorPeers.java`)**:
+* *Heartbeat* periódico entre instâncias para detectar nós *down* e desviar rotas indisponíveis[cite: 1, 2].
 
-A pasta `vaijunto-server` já contém scripts e referência de configuração para iniciar três empresas. O ambiente deve usar um token compartilhado em todas as instâncias e nomes distintos de empresa.
 
-Exemplo de variáveis:
+6. **Persistência e Recuperação via WAL (`Wal.java`)**:
+* Registro sequencial em disco (`wal.log`) de todas as etapas de transação (`PREPARAR`, `CONFIRMAR`, `CANCELAR`)[cite: 1, 2]. No *startup*, o servidor lê o log e limpa transações pendentes/órfãs deixando o estado consistente[cite: 1, 2].
+
+
+
+---
+
+## 📡 Especificação da API REST (Comunicação Inter-Empresas)
+
+| Método | Endpoint | Descrição | Status Codes |
+| --- | --- | --- | --- |
+| **GET** | `/api/caronas/origem-destino` | Consulta trechos disponíveis entre cidades | `200 OK`, `400 Bad Request` |
+| **POST** | `/api/reservas/preparar` | **Fase 1 2PC**: Solicita pré-reserva/bloqueio temporário de assento | `200 OK`, `409 Conflict`, `404 Not Found` |
+| **POST** | `/api/reservas/confirmar` | **Fase 2 2PC**: Confirma reserva de forma definitiva (Commit) | `200 OK`, `400 Bad Request` |
+| **POST** | `/api/reservas/cancelar` | **Fase 2 2PC**: Libera pré-reserva temporária (Rollback) | `200 OK`, `400 Bad Request` |
+| **GET** | `/api/health` | Verificação de disponibilidade (*Heartbeat*) | `200 OK` |
+
+---
+
+## 📂 Estrutura do Repositório
+
+```text
+VaiJunto-2/
+├── vaijunto-client/                   # Módulo Cliente
+│   ├── Dockerfile
+│   ├── rodar-simulador.sh             # Script para iniciar simulação de carga
+│   └── src/main/java/
+│       ├── client/                    # Socket TCP e VaiJuntoClient
+│       ├── com/vaijunto/ui/           # Telas JavaFX (Login, Passageiro, Motorista)
+│       └── simulador/                 # SimuladorPassageiros (Headless multi-thread)
+├── vaijunto-server/                   # Módulo Servidor
+│   ├── Dockerfile
+│   ├── docker-compose.lab.yml         # Compose para ambiente de testes de laboratório
+│   ├── docker-compose.prod.yml        # Compose para ambiente distribuído em produção
+│   ├── rodar-consorcio-docker.sh      # Subida automatizada de instâncias Docker
+│   ├── rodar-consorcio-local.sh       # Subida de instâncias Java locais para debug
+│   └── src/main/java/
+│       ├── api/                       # Endpoints Spark/Javalin e Cliente HTTP REST
+│       ├── config/                    # Parâmetros e variáveis de ambiente (Config.java)
+│       ├── controller/                # Regras de Negócio, 2PC e Locks
+│       ├── model/                     # Grafo, Carona, Itinerario, Trecho
+│       ├── server/                    # Listener Sockets TCP e ClientHandler
+│       └── wal/                       # Eventos, gravador e leitor de Log (WAL)
+└── README.md
+
+```
+
+---
+
+## 🛠️ Pré-requisitos
+
+* **Java JDK 21** ou superior
+* **Apache Maven 3.8+**
+* **Docker & Docker Compose** (opcional, para execução isolada em contêineres)
+
+---
+
+## ⚡ Como Executar
+
+### 1. Execução Local (Modo Desenvolvimento)
+
+Para iniciar os servidores localmente sem Docker (cada um em uma porta diferente):
 
 ```bash
-export CONSORCIO_TOKEN=minha-chave
-export EMPRESA_ID=EMPRESA_A
-export PORTA_TCP=8080
-export PORTA_HTTP=7070
-export PEERS=EMPRESA_B=http://127.0.0.1:7071,EMPRESA_C=http://127.0.0.1:7072
+cd vaijunto-server
+chmod +x rodar-consorcio-local.sh
+./rodar-consorcio-local.sh
+
 ```
 
-Depois, inicie as três instâncias em portas diferentes e valide:
-
-```bash
-curl http://127.0.0.1:7070/api/v1/saude
-curl http://127.0.0.1:7071/api/v1/saude
-curl http://127.0.0.1:7072/api/v1/saude
-```
-
-## Simulador de passageiros
-
-O cliente do projeto inclui um simulador de carga para exercitar o sistema com múltiplos passageiros concorrentes. Ele cria usuários, faz login, pesquisa viagens, seleciona itinerários e reserva assentos em sequência, usando todas as empresas configuradas.
+Em seguida, para rodar a aplicação gráfica de um cliente:
 
 ```bash
 cd vaijunto-client
-./rodar-simulador.sh --usuarios=20 --iteracoes=5 --servidores=127.0.0.1:8080,127.0.0.1:8081,127.0.0.1:8082
+mvn compile exec:java -Dexec.mainClass="com.vaijunto.App"
+
 ```
 
-Também é possível sobrescrever via propriedades do Java:
+### 2. Execução via Docker (Modo Consórcio / Emulação do Barema)
+
+Para compilar e subir o ambiente do consórcio com empresas rodando em contêineres isolados:
 
 ```bash
-mvn -q -DskipTests compile exec:java \
-  -Dexec.mainClass="simulador.SimuladorPassageiros" \
-  -Dexec.args="--usuarios=50 --iteracoes=10 --servidores=127.0.0.1:8080,127.0.0.1:8081,127.0.0.1:8082"
+cd vaijunto-server
+chmod +x rodar-consorcio-docker.sh
+./rodar-consorcio-docker.sh
+
 ```
 
-## Observações de projeto
+Ou diretamente via Docker Compose:
 
-- A comunicação entre servidores é somente via HTTP, com token compartilhado em cabeçalho `X-Consorcio-Token`.
-- O servidor não depende de um coordenador global ou banco compartilhado.
-- A recuperação após queda é feita principalmente pelo WAL e por reprocessamento de transações pendentes.
-- O protocolo implementado é um 2PC leve, com prepare, decisão e confirmação/aborto idempotente por `txId`.
+```bash
+cd vaijunto-server
+docker-compose -f docker-compose.lab.yml up --build
 
-## Visão do barema do problema 2
-
-O Problema 2 tem como objetivo avaliar a arquitetura distribuída do consórcio de caronas compartilhadas, exigindo não apenas a funcionalidade do sistema, mas também a demonstração de consistência, concorrência controlada, tolerância a falhas e recuperação após interrupções. A solução proposta foi concebida para operar sem um coordenador global centralizado, mantendo o controle de vagas e da confirmação de reservas de forma local e distribuída entre as empresas participantes.
-
-### 1) Arquitetura do sistema
-
-Cada empresa participante do consórcio executa uma instância independente do backend, composta por diversos módulos com funções específicas:
-
-- `ServidorTCP`: responsável por receber os clientes locais, autenticar usuários e processar operações do motorista e do passageiro;
-- `ServidorApi`: expõe a API REST utilizada na comunicação entre empresas do consórcio;
-- `GegenciarGeral`: centraliza a lógica de negócio e coordena os serviços de usuário, caronas e reservas;
-- `Grafo`: mantém a representação das caronas e trechos da empresa;
-- `Wal`: registra eventos essenciais em log de escrita antecipada, antes da aplicação dos efeitos de negócio;
-- `ClienteConsorcio`: executa chamadas HTTP aos peers e trata falhas de comunicação como indisponibilidade do servidor remoto;
-- `MonitorPeers`: realiza verificação periódica da disponibilidade dos demais servidores e registra mudanças de estado (`ONLINE`/`OFFLINE`).
-
-A arquitetura do presente projeto difere da abordagem centralizada do Problema 1, no qual a decisão sobre disponibilidade e confirmação era concentrada em um único ponto. No modelo distribuído adotado, cada empresa é responsável por seus trechos e pelo controle local de vagas. Essa mudança reduz o ponto único de falha, mas exige mecanismos explícitos de coordenação entre empresas, recuperação de estado e tratamento de concorrência.
-
-### 2) Comunicação entre servidores via API REST
-
-A comunicação entre as empresas do consórcio é realizada por meio de HTTP, com prefixo `/api/v1` e autenticação por cabeçalho `X-Consorcio-Token`. Os principais recursos expostos são os seguintes:
-
-- `GET /saude`: responde com o identificador da empresa e o status do servidor;
-- `GET /trechos?data=YYYY-MM-DD`: retorna os trechos disponíveis em uma determinada data;
-- `POST /reservas`: confirma uma reserva remota e retorna `200` em caso de sucesso ou `409` em caso de conflito;
-- `GET /reservas/estado?idReserva=...&login=...`: consulta o estado de uma reserva;
-- `POST /tx/{txId}/prepare`: prepara a transação de um itinerário em um peer;
-- `POST /tx/{txId}/commit`: confirma a transação;
-- `POST /tx/{txId}/abort`: aborta a transação;
-- `GET /tx/{txId}/estado`: consulta o estado atual da transação.
-
-As requisições entre servidores possuem timeout configurado no cliente, de modo que falhas de rede ou respostas demoradas são tratadas como indisponibilidade do peer. Além disso, a operação foi projetada para ser idempotente por `txId` e por `idReserva`, de modo que a repetição de uma mesma requisição não resulte em efeitos duplicados nem em inconsistência do estado global do consórcio.
-
-### 3) Busca distribuída de itinerários
-
-A busca por itinerários em empresas distintas é realizada mediante consulta em tempo real aos servidores dos peers. Quando um cliente solicita uma viagem, o servidor local consulta primeiro os trechos da própria empresa e, em seguida, chama as demais empresas para listar trechos de interesse em uma determinada data.
-
-A estratégia adotada usa a base local de cada empresa como fonte de verdade para o conhecimento dos trechos e, portanto, evita a necessidade de um catálogo centralizado ou de um banco compartilhado. Caso uma empresa esteja indisponível, o funcionamento do consórcio não é interrompido em sua totalidade: as operações continuam considerando somente as empresas respondentes, e a falha é tratada como um caso normal de participação parcial do sistema distribuído.
-
-### 4) Exclusão mútua de assentos
-
-A exclusão mútua é obtida no nível do trecho, que constitui o recurso crítico do sistema. Cada instância de `Trecho` encapsula a lógica de controle de vagas e a lista de passageiros confirmados. Os métodos que alteram a disponibilidade do trecho são sincronizados, de modo que a atualização da contagem de assentos e da lista de passageiros é serializada por um lock local.
-
-Esse mecanismo garante que o mesmo assento de um mesmo trecho não seja confirmado para dois passageiros simultaneamente, mesmo quando requisições concorrentes chegam de diferentes empresas. A empresa dona do trecho é a autoridade responsável pela validação da disponibilidade, o que resolve o conflito deterministically e evita inconsistência de estado.
-
-### 5) Atomicidade distribuída da confirmação de itinerários
-
-A confirmação de um itinerário que envolve trechos de empresas diferentes é implementada por meio de um protocolo leve de 2PC (two-phase commit). O processo segue os seguintes passos:
-
-1. O coordenador da transação gera um identificador único `txId`;
-2. cada peer recebe uma requisição `POST /tx/{txId}/prepare` com o login do passageiro e os trechos envolvidos;
-3. o participante avalia a disponibilidade e responde `200` com `PREPARADA` ou `409` em caso de conflito;
-4. se todos os participantes prepararem a transação, o coordenador registra a decisão no WAL e envia `commit` aos peers;
-5. caso algum participante recuse, o coordenador registra `ABORT` no WAL e envia `abort` aos demais participantes para que os trechos já reservados sejam liberados.
-
-A transação possui estados locais bem definidos (`INICIADA`, `PREPARADA`, `COMMIT`, `ABORT`, e variações de confirmação), permitindo reprocessamento após falhas. O uso de `txId` garante idempotência e possibilita que a operação seja retomada sem duplicar efeitos colaterais no consórcio.
-
-```mermaid
-sequenceDiagram
-    participant U as Usuário
-    participant C as Coordenador
-    participant P1 as Peer A
-    participant P2 as Peer B
-    participant P3 as Peer C
-
-    U->>C: reserva itinerário (A+B+C)
-    C->>C: gera txId e registra TX_INICIADA no WAL
-    C->>P1: POST /tx/{txId}/prepare
-    C->>P2: POST /tx/{txId}/prepare
-    C->>P3: POST /tx/{txId}/prepare
-    P1-->>C: 200 PREPARADA
-    P2-->>C: 200 PREPARADA
-    P3-->>C: 409 sem vaga
-    alt todos aceitaram
-        C->>C: registra TX_COMMIT no WAL
-        C->>P1: POST /tx/{txId}/commit
-        C->>P2: POST /tx/{txId}/commit
-        C->>P3: POST /tx/{txId}/commit
-    else algum recusou
-        C->>C: registra TX_ABORT no WAL
-        C->>P1: POST /tx/{txId}/abort
-        C->>P2: POST /tx/{txId}/abort
-        C->>P3: POST /tx/{txId}/abort
-    end
 ```
 
-### 6) Critério de precedência do último assento
+---
 
-Para decidir qual passageiro permanece com o último assento de um trecho quando há concorrência entre diferentes empresas, o sistema adota o critério de que a empresa dona do trecho é responsável pela decisão. A disputa é serializada pelo lock do trecho em seu servidor local, e a primeira operação que obtém o lock ganha a vaga. A segunda operação, ao não conseguir adquirir o lock, recebe `409` e conclui em aborto.
+## 🧪 Testes Automatizados e Simulador de Carga
 
-Esse critério é adequado para um ambiente sem sincronização de relógios entre servidores, pois não depende de marcação temporal global ou de relógios de parede. A decisão é baseada na ordem local de aquisição do lock e, consequentemente, é determinística mesmo diante de atrasos na rede ou desalinhos temporais entre os nós.
+### Testes Unitários e de Concorrência (JUnit)
 
-### 7) Deadlock distribuído
+No módulo `vaijunto-server`, os testes automatizados cobrem cenários de corrida e falha distribuída[cite: 1]:
 
-A solução evitou a formação de deadlocks distribuídos ao não permitir que transações concorrentes adquiram recursos em ordens inconsistentes. Como cada trecho é controlado por seu servidor proprietário e a concessão da reserva é tratada por lock local, não há ciclo de espera entre empresas. Quando duas transações competem por trechos em ordem distinta, uma delas é abortada e a outra continua, evitando bloqueio permanente.
+```bash
+cd vaijunto-server
+mvn test
 
-Esse mecanismo reduz o risco de impasse, embora implique que algumas requisições sejam rejeitadas em cenários de alta concorrência. Em compensação, o sistema preserva a consistência do estado e evita que o consórcio fique bloqueado por espera circular.
+```
 
-### 8) Tolerância a falhas
+* **`ConcorrenciaTest.java`**: Simula múltiplas conexões paralelas disputando cadastros e assentos locais[cite: 1].
+* **`ConsorcioTransacaoTest.java`**: Valida a atomicidade do protocolo 2PC e retentativas em caso de ausência de resposta REST[cite: 1, 2].
 
-A tolerância a falhas foi considerada como requisito central do projeto. Quando um peer falha antes da confirmação de um itinerário, a operação simplesmente não recebe resposta em tempo hábil e é tratada como indisponibilidade transitória. Quando a falha ocorre durante a execução da transação, a operação pode ficar pendente até que o servidor retorne e reprocessa o estado persistido em log. Quando a falha acontece após a confirmação, o sistema usa o registro de eventos para restaurar o estado correto ao reiniciar o serviço.
+### Simulador Autônomo de Passageiros (Headless)
 
-A detecção de indisponibilidade é feita pelo `MonitorPeers`, que executa verificações periódicas de saúde em cada peer e registra eventos de mudança de estado. Esse mecanismo permite que o restante do consórcio continue operando mesmo quando uma empresa deixa de responder, sem comprometer a disponibilidade geral do sistema.
+Para disparar carga em massa simulando usuários simultâneos no consórcio[cite: 1, 5]:
 
-### 9) Recuperação e persistência
+```bash
+cd vaijunto-client
+chmod +x rodar-simulador.sh
+./rodar-simulador.sh
 
-A recuperação do estado do sistema é implementada por meio de WAL (`Write-Ahead Log`). Cada evento relevante do sistema, como cadastro de usuários, criação de carona, reserva e transações distribuídas, é registrado antes da aplicação do efeito correspondente. Esse procedimento garante que a confirmação do evento seja durável mesmo em caso de interrupção abrupta.
+```
 
-Ao reiniciar um servidor, o sistema realiza os seguintes passos:
+---
 
-1. lê o arquivo de log em ordem;
-2. valida o CRC de cada entrada;
-3. descarta a última linha truncada ou incompleta em cenários de queda abrupta;
-4. reprocessa os eventos válidos para reconstruir o estado da empresa;
-5. retoma a operação normal sem inconsistências causadas por falha externa.
+## 🧪 Injeção de Falhas e Demonstração do WAL
 
-A persistência em WAL e o uso de identificadores de transação (`txId`) são fundamentais para a garantia de consistência e idempotência após recuperação, evitando que reservas ou confirmações sejam aplicadas mais de uma vez.
+Para verificar a tolerância a falhas exigida na apresentação do projeto[cite: 2, 3]:
 
-### 10) Testes de validação
+1. **Simular a Queda de uma Empresa**:
+```bash
+docker stop vaijunto-server-2
 
-Para validar o comportamento do sistema, foram desenvolvidos testes focados em concorrência e consistência. Os principais cenários avaliados incluem:
+```
 
-- cadastro simultâneo de múltiplos usuários distintos;
-- rejeição de cadastro de mesmo login em concorrência;
-- reserva remota entre empresas distintas;
-- disputa por último assento por vários passageiros simultaneamente;
-- recuperação do estado de transações após falha local.
 
-Os testes demonstraram que a solução preserva a exclusão mútua, limita o número de confirmações ao número de vagas disponíveis e mantém o comportamento do consórcio estável sob carga concorrente.
+* *Comportamento observado*: O `MonitorPeers` dos outros servidores detectará o erro[cite: 1, 2]. As buscas de itinerário continuarão funcionando desviando dos trechos da Empresa 2[cite: 1, 2]. Transações 2PC em andamento contendo a Empresa 2 sofrerão *rollback* atômico[cite: 1, 2].
 
-### 11) Emulação em Docker
 
-Os servidores do consórcio foram executados em contêineres Docker em máquinas distintas do laboratório, utilizando o arquivo `docker-compose.lab.yml` para orquestrar três empresas: `EMPRESA_A`, `EMPRESA_B` e `EMPRESA_C`.
+2. **Recuperação e Consistência (WAL)**:
+```bash
+docker start vaijunto-server-2
 
-Cada contêiner expõe:
+```
 
-- porta TCP para clientes locais em `127.0.0.1:8080`, `8081` e `8082`;
-- porta HTTP de comunicação entre peers em `127.0.0.1:7070`, `7071` e `7072`;
-- volume dedicado para armazenamento local da empresa;
-- uma chave compartilhada `CONSORCIO_TOKEN` e lista de peers específica para cada instância.
 
-A falha de uma empresa pode ser simulada pela interrupção do contêiner correspondente. A observação do sistema em execução permite verificar que os outros servidores continuam respondendo e que a empresa fora do ar é sinalizada como indisponível pelo monitor, sem interromper completamente o funcionamento do consórcio.
+* *Comportamento observado*: O nó lerá o arquivo `wal.log` no boot[cite: 1, 2], desfarás pré-reservas não concluídas e reativará os serviços de forma consistente no consórcio[cite: 1, 2].
