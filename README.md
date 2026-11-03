@@ -1,8 +1,8 @@
-# VaiJunto 2.0 — Consórcio Distribuído de Caronas Compartilhadas
+# VaiJunto 2.0: Consórcio Distribuído de Caronas Compartilhadas
 
-O **VaiJunto 2.0** é uma solução distribuída e descentralizada em consórcio *peer-to-peer* (P2P) para o compartilhamento de caronas intermunicipais[cite: 4]. O sistema permite a cooperação entre diferentes plataformas/empresas de caronas sem a necessidade de um servidor centralizador ou banco de dados compartilhado[cite: 4, 5].
+O **VaiJunto 2.0** é uma solução distribuída e descentralizada em consórcio *peer-to-peer* (P2P) para o compartilhamento de caronas intermunicipais. O sistema permite a cooperação entre diferentes plataformas/empresas de caronas sem a necessidade de um servidor centralizador ou banco de dados compartilhado.
 
-Cada empresa opera sua própria aplicação de servidor[cite: 5], gerenciando exclusivamente a sua base de usuários e o estoque de vagas dos seus trechos[cite: 4, 5]. A montagem e a reserva de itinerários multi-empresas ocorrem por meio de rotas REST inter-servidores[cite: 1, 5] e de um protocolo de transação distribuída de duas fases (*Two-Phase Commit* — 2PC)[cite: 1, 2].
+Cada empresa opera sua própria aplicação de servidor, gerenciando exclusivamente a sua base de usuários e o estoque de vagas dos seus trechos. A montagem e a reserva de itinerários multi-empresas ocorrem por meio de rotas REST inter-servidores e de um protocolo de transação distribuída de duas fases (*Two-Phase Commit*, 2PC).
 
 ---
 
@@ -25,38 +25,31 @@ Cada empresa opera sua própria aplicação de servidor[cite: 5], gerenciando ex
 
 ### Componentes Chave:
 
-* **`vaijunto-client`**: Aplicação cliente (GUI JavaFX e simulador headless)[cite: 1]. Conecta-se exclusivamente ao servidor TCP da sua empresa de origem[cite: 1, 5].
-* **`vaijunto-server`**: Nó autônomo do consórcio[cite: 1, 5]. Contém os serviços de negócio, barramento TCP local para clientes, API REST para *peers*, motor de busca em grafo, gerenciador de locks e log de persistência WAL[cite: 1, 2].
+* **`vaijunto-client`**: Aplicação cliente (GUI JavaFX e simulador headless). Conecta-se exclusivamente ao servidor TCP da sua empresa de origem.
+* **`vaijunto-server`**: Nó autônomo do consórcio. Contém os serviços de negócio, barramento TCP local para clientes, API REST para *peers*, motor de busca em grafo, gerenciador de locks e log de persistência WAL.
 
 ---
 
 ## 🛠️ Principais Recursos Distribuídos
 
 1. **Busca Distribuída em Tempo Real (`Grafo.java`)**:
-* Algoritmo DFS (Busca em Profundidade) que combina trechos de caronas locais com trechos descobertos via chamadas REST (`GET /api/caronas/origem-destino`) nos *peers* ativos[cite: 1].
+   * Algoritmo DFS (Busca em Profundidade) que combina trechos de caronas locais com trechos descobertos via chamadas REST (`GET /api/caronas/origem-destino`) nos *peers* ativos.
 
-
-2. **Atomicidade Distribuída — Protocolo 2PC (`ReservaService.java` & `ClienteConsorcio.java`)**:
-* **Fase 1 (Prepare)**: Solicita a reserva temporária/bloqueio dos assentos aos servidores parceiros[cite: 1, 2].
-* **Fase 2 (Commit / Rollback)**: Se todos aprovarem, efetiva a confirmação (`/confirmar`)[cite: 1, 2]. Caso qualquer parceiro recuse ou caia, dispara a mensagem de cancelamento (`/cancelar`) para todos os trechos previamente bloqueados[cite: 1, 2].
-
+2. **Atomicidade Distribuída: Protocolo 2PC (`ReservaService.java` & `ClienteConsorcio.java`)**:
+   * **Fase 1 (Prepare)**: Solicita a reserva temporária/bloqueio dos assentos aos servidores parceiros.
+   * **Fase 2 (Commit / Rollback)**: Se todos aprovarem, efetiva a confirmação (`/confirmar`). Caso qualquer parceiro recuse ou caia, dispara a mensagem de cancelamento (`/cancelar`) para todos os trechos previamente bloqueados.
 
 3. **Exclusão Mútua & Precedência (`CaronaService.java`)**:
-* Controle estrito de concorrência local por travas (`ReentrantLock` / `synchronized`) no nó dono do trecho[cite: 1]. A ordenação de chegada no nó validador desempata disputas simultâneas em relógios desincronizados[cite: 1, 2].
-
+   * Controle estrito de concorrência local por travas (`ReentrantLock` / `synchronized`) no nó dono do trecho. A ordenação de chegada no nó validador desempata disputas simultâneas em relógios desincronizados.
 
 4. **Prevenção de Deadlocks Distribuídos**:
-* Ordenação determinística na requisição de recursos e uso de *timeouts* curtos de conexão HTTP em `ClienteConsorcio.java`[cite: 1, 6].
-
+   * Ordenação determinística na requisição de recursos e uso de *timeouts* curtos de conexão HTTP em `ClienteConsorcio.java`.
 
 5. **Tolerância a Falhas & Monitoramento (`MonitorPeers.java`)**:
-* *Heartbeat* periódico entre instâncias para detectar nós *down* e desviar rotas indisponíveis[cite: 1, 2].
-
+   * *Heartbeat* periódico entre instâncias para detectar nós *down* e desviar rotas indisponíveis.
 
 6. **Persistência e Recuperação via WAL (`Wal.java`)**:
-* Registro sequencial em disco (`wal.log`) de todas as etapas de transação (`PREPARAR`, `CONFIRMAR`, `CANCELAR`)[cite: 1, 2]. No *startup*, o servidor lê o log e limpa transações pendentes/órfãs deixando o estado consistente[cite: 1, 2].
-
-
+   * Registro sequencial em disco (`wal.log`) de todas as etapas de transação (`PREPARAR`, `CONFIRMAR`, `CANCELAR`). No *startup*, o servidor lê o log e limpa transações pendentes/órfãs, deixando o estado consistente.
 
 ---
 
@@ -142,7 +135,7 @@ Retorna a lista de trechos de caronas que possuem vagas disponíveis na data sol
 
 ---
 
-### 3. Fase 1 do 2PC — Solicitação de Preparação (*Prepare*)
+### 3. Fase 1 do 2PC: Solicitação de Preparação (*Prepare*)
 Solicita a retenção temporária de assentos para uma transação distribuída (`txId`). O nó valida a disponibilidade e decrementa atomicamente as vagas, mantendo um bloqueio temporário (*Hold*) com um tempo limite (*TTL*).
 
 - **Endpoint:** `POST /api/v1/tx/{txId}/prepare`
@@ -161,7 +154,7 @@ Solicita a retenção temporária de assentos para uma transação distribuída 
     ]
   }
   ```
-- **Resposta de Sucesso — VOTO_COMMIT (`200 OK`):**
+- **Resposta de Sucesso, VOTO_COMMIT (`200 OK`):**
   ```json
   {
     "txId": "7a3b8c9d-1234-5678-90ab-cdef12345678",
@@ -170,7 +163,7 @@ Solicita a retenção temporária de assentos para uma transação distribuída 
     "empresaId": "EMPRESA_A"
   }
   ```
-- **Resposta de Conflito — VOTO_ABORT (`409 Conflict`):**
+- **Resposta de Conflito, VOTO_ABORT (`409 Conflict`):**
   ```json
   {
     "txId": "7a3b8c9d-1234-5678-90ab-cdef12345678",
@@ -182,7 +175,7 @@ Solicita a retenção temporária de assentos para uma transação distribuída 
 
 ---
 
-### 4. Fase 2 do 2PC — Confirmação Global (*Commit*)
+### 4. Fase 2 do 2PC: Confirmação Global (*Commit*)
 Efetiva definitivamente a reserva do assento previamente bloqueado no estado `PREPARADA`.
 
 - **Endpoint:** `POST /api/v1/tx/{txId}/commit`
@@ -200,7 +193,7 @@ Efetiva definitivamente a reserva do assento previamente bloqueado no estado `PR
 
 ---
 
-### 5. Fase 2 do 2PC — Cancelamento Global (*Abort / Rollback*)
+### 5. Fase 2 do 2PC: Cancelamento Global (*Abort / Rollback*)
 Cancela a retenção temporária do assento em caso de desistência ou recusa de algum participante, devolvendo a vaga à carona.
 
 - **Endpoint:** `POST /api/v1/tx/{txId}/abort`
@@ -377,7 +370,7 @@ docker-compose -f docker-compose.lab.yml up --build
 
 ### Testes Unitários e de Concorrência (JUnit)
 
-No módulo `vaijunto-server`, os testes automatizados cobrem cenários de corrida e falha distribuída[cite: 1]:
+No módulo `vaijunto-server`, os testes automatizados cobrem cenários de corrida e falha distribuída:
 
 ```bash
 cd vaijunto-server
@@ -385,12 +378,12 @@ mvn test
 
 ```
 
-* **`ConcorrenciaTest.java`**: Simula múltiplas conexões paralelas disputando cadastros e assentos locais[cite: 1].
-* **`ConsorcioTransacaoTest.java`**: Valida a atomicidade do protocolo 2PC e retentativas em caso de ausência de resposta REST[cite: 1, 2].
+* **`ConcorrenciaTest.java`**: Simula múltiplas conexões paralelas disputando cadastros e assentos locais.
+* **`ConsorcioTransacaoTest.java`**: Valida a atomicidade do protocolo 2PC e retentativas em caso de ausência de resposta REST.
 
 ### Simulador Autônomo de Passageiros (Headless)
 
-Para disparar carga em massa simulando usuários simultâneos no consórcio[cite: 1, 5]:
+Para disparar carga em massa simulando usuários simultâneos no consórcio:
 
 ```bash
 cd vaijunto-client
@@ -403,7 +396,7 @@ chmod +x rodar-simulador.sh
 
 ## 🧪 Injeção de Falhas e Demonstração do WAL
 
-Para verificar a tolerância a falhas exigida na apresentação do projeto[cite: 2, 3]:
+Para verificar a tolerância a falhas exigida na apresentação do projeto:
 
 1. **Simular a Queda de uma Empresa**:
 ```bash
@@ -411,9 +404,7 @@ docker stop vaijunto-server-2
 
 ```
 
-
-* *Comportamento observado*: O `MonitorPeers` dos outros servidores detectará o erro[cite: 1, 2]. As buscas de itinerário continuarão funcionando desviando dos trechos da Empresa 2[cite: 1, 2]. Transações 2PC em andamento contendo a Empresa 2 sofrerão *rollback* atômico[cite: 1, 2].
-
+   * *Comportamento observado*: O `MonitorPeers` dos outros servidores detectará o erro. As buscas de itinerário continuarão funcionando desviando dos trechos da Empresa 2. Transações 2PC em andamento contendo a Empresa 2 sofrerão *rollback* atômico.
 
 2. **Recuperação e Consistência (WAL)**:
 ```bash
@@ -421,5 +412,6 @@ docker start vaijunto-server-2
 
 ```
 
+   * *Comportamento observado*: O nó lerá o arquivo `wal.log` no boot, desfará pré-reservas não concluídas e reativará os serviços de forma consistente no consórcio.
 
-* *Comportamento observado*: O nó lerá o arquivo `wal.log` no boot[cite: 1, 2], desfarás pré-reservas não concluídas e reativará os serviços de forma consistente no consórcio[cite: 1, 2].
+---
