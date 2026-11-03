@@ -62,13 +62,19 @@ Cada empresa opera sua própria aplicação de servidor[cite: 5], gerenciando ex
 
 ## 📡 Especificação da API REST (Comunicação Inter-Empresas)
 
-| Método | Endpoint | Descrição | Status Codes |
-| --- | --- | --- | --- |
-| **GET** | `/api/caronas/origem-destino` | Consulta trechos disponíveis entre cidades | `200 OK`, `400 Bad Request` |
-| **POST** | `/api/reservas/preparar` | **Fase 1 2PC**: Solicita pré-reserva/bloqueio temporário de assento | `200 OK`, `409 Conflict`, `404 Not Found` |
-| **POST** | `/api/reservas/confirmar` | **Fase 2 2PC**: Confirma reserva de forma definitiva (Commit) | `200 OK`, `400 Bad Request` |
-| **POST** | `/api/reservas/cancelar` | **Fase 2 2PC**: Libera pré-reserva temporária (Rollback) | `200 OK`, `400 Bad Request` |
-| **GET** | `/api/health` | Verificação de disponibilidade (*Heartbeat*) | `200 OK` |
+### Endpoints da API REST do Consórcio (`/api/v1`)
+
+| Método | Endpoint | Descrição | Papel no Consórcio / 2PC | Status Codes |
+| --- | --- | --- | --- | --- |
+| **GET** | `/api/v1/saude` | Verificação de disponibilidade (*health-check*) | Monitoramento ativo (*Heartbeat*) via `MonitorPeers` | `200 OK`, `405 Method Not Allowed` |
+| **GET** | `/api/v1/trechos?data={data}` | Consulta trechos diretos disponíveis em uma data | Descoberta de itinerários e montagem do Grafo P2P | `200 OK`, `400 Bad Request`, `405 Method Not Allowed` |
+| **POST** | `/api/v1/reservas` | Solicita e confirma reserva direta em nó remoto | Execução de reserva em participante | `200 OK`, `400 Bad Request`, `409 Conflict` |
+| **POST** | `/api/v1/reservas/cancelar` | Cancela uma reserva existente de um usuário | Liberação de assentos e desfazimento de reserva | `200 OK`, `400 Bad Request`, `405 Method Not Allowed` |
+| **GET** | `/api/v1/reservas/estado?idReserva={id}&login={login}` | Consulta o status atual de uma reserva por ID | Verificação e auditoria de estado da reserva | `200 OK`, `400 Bad Request`, `405 Method Not Allowed` |
+| **POST** | `/api/v1/tx/{txId}/prepare` | **Fase 1 do 2PC**: Reserva temporária de trechos (com TTL) | Voto *Prepare* e retenção de vaga | `200 OK`, `400 Bad Request`, `401 Unauthorized`, `409 Conflict` |
+| **POST** | `/api/v1/tx/{txId}/commit` | **Fase 2 do 2PC**: Efetiva a transação pré-reservada | *Global Commit* (Efetivação definitiva) | `200 OK`, `401 Unauthorized`, `409 Conflict` |
+| **POST** | `/api/v1/tx/{txId}/abort` | **Fase 2 do 2PC**: Aborta a transação e libera vagas | *Global Abort* (*Rollback* de trechos) | `200 OK`, `401 Unauthorized`, `409 Conflict` |
+| **GET** | `/api/v1/tx/{txId}/estado` | Consulta o estado transacional local (`PREPARADA`, `COMMIT`, etc.) | Resolução de incertezas no 2PC | `200 OK`, `401 Unauthorized` |
 
 ---
 
