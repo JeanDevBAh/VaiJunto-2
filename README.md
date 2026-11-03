@@ -60,21 +60,236 @@ Cada empresa opera sua própria aplicação de servidor[cite: 5], gerenciando ex
 
 ---
 
-## 📡 Especificação da API REST (Comunicação Inter-Empresas)
+# 🌐 Especificação da API REST do Consórcio (VaiJunto 2.0)
 
-### Endpoints da API REST do Consórcio (`/api/v1`)
+A API REST do **VaiJunto 2.0** permite a comunicação inter-servidores (*peer-to-peer*) entre as empresas do consórcio. Ela é utilizada para a descoberta distribuída de itinerários, sincronização de dados e execução do protocolo transacional **Two-Phase Commit (2PC)**.
+
+---
+
+## 🛠️ Informações Gerais
+
+- **Prefixo Base:** `/api/v1`
+- **Formato de Dados:** JSON (`application/json; charset=utf-8`)
+- **Autenticação Inter-Servidores:** As rotas transacionais exigem o cabeçalho HTTP de segurança:
+  - `X-Consorcio-Token: <seu_token_de_consorcio>`
+- **Porta HTTP Padrão:** Configurável por nó (ex.: `7070`, `7071`, `7072`).
+
+---
+
+## 📋 Resumo dos Endpoints
 
 | Método | Endpoint | Descrição | Papel no Consórcio / 2PC | Status Codes |
-| --- | --- | --- | --- | --- |
-| **GET** | `/api/v1/saude` | Verificação de disponibilidade (*health-check*) | Monitoramento ativo (*Heartbeat*) via `MonitorPeers` | `200 OK`, `405 Method Not Allowed` |
-| **GET** | `/api/v1/trechos?data={data}` | Consulta trechos diretos disponíveis em uma data | Descoberta de itinerários e montagem do Grafo P2P | `200 OK`, `400 Bad Request`, `405 Method Not Allowed` |
-| **POST** | `/api/v1/reservas` | Solicita e confirma reserva direta em nó remoto | Execução de reserva em participante | `200 OK`, `400 Bad Request`, `409 Conflict` |
-| **POST** | `/api/v1/reservas/cancelar` | Cancela uma reserva existente de um usuário | Liberação de assentos e desfazimento de reserva | `200 OK`, `400 Bad Request`, `405 Method Not Allowed` |
-| **GET** | `/api/v1/reservas/estado?idReserva={id}&login={login}` | Consulta o status atual de uma reserva por ID | Verificação e auditoria de estado da reserva | `200 OK`, `400 Bad Request`, `405 Method Not Allowed` |
-| **POST** | `/api/v1/tx/{txId}/prepare` | **Fase 1 do 2PC**: Reserva temporária de trechos (com TTL) | Voto *Prepare* e retenção de vaga | `200 OK`, `400 Bad Request`, `401 Unauthorized`, `409 Conflict` |
-| **POST** | `/api/v1/tx/{txId}/commit` | **Fase 2 do 2PC**: Efetiva a transação pré-reservada | *Global Commit* (Efetivação definitiva) | `200 OK`, `401 Unauthorized`, `409 Conflict` |
-| **POST** | `/api/v1/tx/{txId}/abort` | **Fase 2 do 2PC**: Aborta a transação e libera vagas | *Global Abort* (*Rollback* de trechos) | `200 OK`, `401 Unauthorized`, `409 Conflict` |
-| **GET** | `/api/v1/tx/{txId}/estado` | Consulta o estado transacional local (`PREPARADA`, `COMMIT`, etc.) | Resolução de incertezas no 2PC | `200 OK`, `401 Unauthorized` |
+| :---: | :--- | :--- | :--- | :--- |
+| **`GET`** | `/api/v1/saude` | Health-check e identificação do nó | Monitoramento ativo (*Heartbeat*) | `200`, `405` |
+| **`GET`** | `/api/v1/trechos` | Consulta trechos com vagas em uma data | Descoberta distribuída em Grafo P2P | `200`, `400`, `405` |
+| **`POST`** | `/api/v1/reservas` | Solicita e confirma reserva direta | Execução de reserva remota | `200`, `400`, `409` |
+| **`POST`** | `/api/v1/reservas/cancelar` | Cancela uma reserva existente de usuário | Liberação de assentos / Rollback | `200`, `400`, `405` |
+| **`GET`** | `/api/v1/reservas/estado` | Consulta o status de uma reserva por ID | Auditoria de estado do nó | `200`, `400`, `405` |
+| **`POST`** | `/api/v1/tx/{txId}/prepare` | **Fase 1 do 2PC**: Reserva temporária de assentos | Voto *Prepare* com retenção por TTL | `200`, `400`, `401`, `409` |
+| **`POST`** | `/api/v1/tx/{txId}/commit` | **Fase 2 do 2PC**: Efetiva a reserva temporária | *Global Commit* (Efetivação atômica) | `200`, `401`, `409` |
+| **`POST`** | `/api/v1/tx/{txId}/abort` | **Fase 2 do 2PC**: Cancela o bloqueio e libera vagas | *Global Abort* (Desfazimento) | `200`, `401`, `409` |
+| **`GET`** | `/api/v1/tx/{txId}/estado` | Consulta o estado transacional local | Resolução de incertezas e reconciliação | `200`, `401` |
+
+---
+
+## 📖 Detalhamento das Rotas
+
+### 1. Verificação de Saúde (*Heartbeat*)
+Verifica a disponibilidade do servidor participante. Utilizado continuamente pelo componente `MonitorPeers`.
+
+- **Endpoint:** `GET /api/v1/saude`
+- **Cabeçalhos:** Nenhum obrigatório.
+- **Resposta de Sucesso (`200 OK`):**
+  ```json
+  {
+    "empresaId": "EMPRESA_A",
+    "status": "OK"
+  }
+  ```
+
+---
+
+### 2. Consulta de Trechos Locais
+Retorna a lista de trechos de caronas que possuem vagas disponíveis na data solicitada, permitindo a montagem do Grafo P2P em tempo real.
+
+- **Endpoint:** `GET /api/v1/trechos?data={data}`
+- **Parâmetro de Query:** `data` (obrigatório, formato `YYYY-MM-DD`).
+- **Resposta de Sucesso (`200 OK`):**
+  ```json
+  {
+    "empresaId": "EMPRESA_A",
+    "data": "2026-11-04",
+    "trechos": [
+      {
+        "caronaId": "550e8400-e29b-41d4-a716-446655440000",
+        "trechoId": "550e8400-e29b-41d4-a716-446655440000_VALENTINE_RHODES",
+        "empresaId": "EMPRESA_A",
+        "origem": "VALENTINE",
+        "destino": "RHODES",
+        "data": "2026-11-04",
+        "preco": 25.0,
+        "vagas": 2
+      }
+    ]
+  }
+  ```
+- **Resposta de Erro (`400 Bad Request`):**
+  ```json
+  {
+    "erro": "Parâmetro obrigatório: data"
+  }
+  ```
+
+---
+
+### 3. Fase 1 do 2PC — Solicitação de Preparação (*Prepare*)
+Solicita a retenção temporária de assentos para uma transação distribuída (`txId`). O nó valida a disponibilidade e decrementa atomicamente as vagas, mantendo um bloqueio temporário (*Hold*) com um tempo limite (*TTL*).
+
+- **Endpoint:** `POST /api/v1/tx/{txId}/prepare`
+- **Cabeçalho:** `X-Consorcio-Token: <token>`
+- **Corpo da Requisição (JSON):**
+  ```json
+  {
+    "login": "passageiro_123",
+    "ttlMs": 10000,
+    "trechos": [
+      {
+        "caronaId": "550e8400-e29b-41d4-a716-446655440000",
+        "origem": "VALENTINE",
+        "destino": "RHODES"
+      }
+    ]
+  }
+  ```
+- **Resposta de Sucesso — VOTO_COMMIT (`200 OK`):**
+  ```json
+  {
+    "txId": "7a3b8c9d-1234-5678-90ab-cdef12345678",
+    "sucesso": true,
+    "estado": "PREPARADA",
+    "empresaId": "EMPRESA_A"
+  }
+  ```
+- **Resposta de Conflito — VOTO_ABORT (`409 Conflict`):**
+  ```json
+  {
+    "txId": "7a3b8c9d-1234-5678-90ab-cdef12345678",
+    "sucesso": false,
+    "estado": "ABORT",
+    "empresaId": "EMPRESA_A"
+  }
+  ```
+
+---
+
+### 4. Fase 2 do 2PC — Confirmação Global (*Commit*)
+Efetiva definitivamente a reserva do assento previamente bloqueado no estado `PREPARADA`.
+
+- **Endpoint:** `POST /api/v1/tx/{txId}/commit`
+- **Cabeçalho:** `X-Consorcio-Token: <token>`
+- **Corpo da Requisição:** `{}` (JSON vazio).
+- **Resposta de Sucesso (`200 OK`):**
+  ```json
+  {
+    "txId": "7a3b8c9d-1234-5678-90ab-cdef12345678",
+    "sucesso": true,
+    "estado": "COMMIT",
+    "empresaId": "EMPRESA_A"
+  }
+  ```
+
+---
+
+### 5. Fase 2 do 2PC — Cancelamento Global (*Abort / Rollback*)
+Cancela a retenção temporária do assento em caso de desistência ou recusa de algum participante, devolvendo a vaga à carona.
+
+- **Endpoint:** `POST /api/v1/tx/{txId}/abort`
+- **Cabeçalho:** `X-Consorcio-Token: <token>`
+- **Corpo da Requisição:** `{}` (JSON vazio).
+- **Resposta de Sucesso (`200 OK`):**
+  ```json
+  {
+    "txId": "7a3b8c9d-1234-5678-90ab-cdef12345678",
+    "sucesso": true,
+    "estado": "ABORT",
+    "empresaId": "EMPRESA_A"
+  }
+  ```
+
+---
+
+### 6. Consulta do Estado Transacional
+Permite a auditoria e a resolução de incertezas de outros nós em relação ao estado de uma transação.
+
+- **Endpoint:** `GET /api/v1/tx/{txId}/estado`
+- **Cabeçalho:** `X-Consorcio-Token: <token>`
+- **Resposta de Sucesso (`200 OK`):**
+  ```json
+  {
+    "txId": "7a3b8c9d-1234-5678-90ab-cdef12345678",
+    "estado": "PREPARADA",
+    "empresaId": "EMPRESA_A"
+  }
+  ```
+
+---
+
+### 7. Gestão Direta de Reservas Remotas
+Usado para criação ou cancelamento direto de reservas entre nós do consórcio fora do fluxo de transação distribuída multi-trecho.
+
+#### **Efetuar Reserva Direta:**
+- **Endpoint:** `POST /api/v1/reservas`
+- **Corpo da Requisição (JSON):**
+  ```json
+  {
+    "passageiroLogin": "passageiro_123",
+    "trechos": [
+      {
+        "caronaId": "550e8400-e29b-41d4-a716-446655440000",
+        "origem": "VALENTINE",
+        "destino": "RHODES"
+      }
+    ]
+  }
+  ```
+- **Resposta de Sucesso (`200 OK`):**
+  ```json
+  {
+    "sucesso": true,
+    "idReserva": "reserva-uuid-456",
+    "mensagem": "Reserva confirmada no peer."
+  }
+  ```
+
+#### **Cancelar Reserva Remota:**
+- **Endpoint:** `POST /api/v1/reservas/cancelar`
+- **Corpo da Requisição (JSON):**
+  ```json
+  {
+    "passageiroLogin": "passageiro_123",
+    "idReserva": "reserva-uuid-456"
+  }
+  ```
+- **Resposta de Sucesso (`200 OK`):**
+  ```json
+  {
+    "sucesso": true,
+    "mensagem": "Reserva cancelada no peer."
+  }
+  ```
+
+---
+
+## 🚦 Códigos de Status HTTP
+
+| Código | Nome | Significado |
+| :---: | :--- | :--- |
+| **`200`** | `OK` | Requisição processada com sucesso. |
+| **`400`** | `Bad Request` | Parâmetros obrigatórios ausentes ou payload JSON malformatado. |
+| **`401`** | `Unauthorized` | Token de consórcio (`X-Consorcio-Token`) ausente ou incorreto. |
+| **`404`** | `Not Found` | Rota desconhecida ou recurso não encontrado. |
+| **`405`** | `Method Not Allowed` | Método HTTP incorreto utilizado na requisição (ex.: usar `POST` em rota `GET`). |
+| **`409`** | `Conflict` | Conflito transacional (vagas insuficientes ou erro durante a fase de *prepare*). |
 
 ---
 
